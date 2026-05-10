@@ -1,10 +1,17 @@
-import time
 import os
 import json
-import google.generativeai as genai
+import time
+from datetime import datetime
+import google.generativeai as genai # pyright: ignore[reportMissingImports]
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from drive_engine import leer_estado_maestro, actualizar_estado_maestro
+
+from drive_engine import (
+    leer_estado_maestro,
+    actualizar_estado_maestro,
+    descargar_memoria_lineal,
+    actualizar_memoria_lineal
+)
 
 # Configuración del Motor Cognitivo
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY")) # pyright: ignore[reportPrivateImportUsage]
@@ -13,11 +20,128 @@ TOKEN_PATH = "token.json"
 FILE_ID_MAESTRO = "1POEuCbmOEIURg7UycPsbIrH62uQvJgLI"
 
 def recalcular_bmr(peso, altura, edad):
-    # Ecuación de Mifflin-St Jeor (Motor Alostático V15)
+    """Ecuación de Mifflin-St Jeor."""
     return (10 * peso) + (6.25 * altura) - (5 * edad) + 5
 
+def procesar_telemetria_nativa_api(payload):
+    """
+    MOTOR V15: Analiza Webhooks entrantes de la Fitbit Air (Google Health API).
+    """
+    historial_mes = descargar_memoria_lineal()
+    estado_maestro = leer_estado_maestro(FILE_ID_MAESTRO)
+
+    modelo = genai.GenerativeModel('gemini-1.5-pro') # pyright: ignore[reportPrivateImportUsage]
+
+    prompt_sistema = f"""
+    System Context: You are the Google Health Premium Coach (V15 Core Engine).
+
+    Current Biological State:
+    {json.dumps(estado_maestro['biometria_actual'])}
+
+    Linear Memory Log:
+    {historial_mes}
+
+    New Telemetry (Fitbit Air):
+    {json.dumps(payload)}
+
+    Execution Requirements:
+    Cross-reference the new telemetry with physical fatigue in Linear Memory.
+    Output a precise clinical assessment in Spanish and an actionable directive.
+    Keep it to exactly one dense paragraph.
+    """
+
+    print("[IA] Analizando telemetría de Fitbit contra Memoria Lineal...")
+    respuesta = modelo.generate_content(prompt_sistema)
+    diagnostico = respuesta.text.strip()
+
+    tipo_dato = payload.get("dataTypeName", "telemetry_event")
+    actualizar_memoria_lineal(f"[FITBIT AIR - {tipo_dato.upper()}] Coach IA: {diagnostico}")
+
+    return diagnostico
+
+def procesar_entrenamiento_llm(csv_text, estado_maestro):
+    """
+    ANALISTA BIOMECÁNICO V15: Disección por ejercicio y cómputo global.
+    Este motor procesa cada serie para compararla con el historial y emitir directivas.
+    """
+    modelo = genai.GenerativeModel('gemini-1.5-pro') # pyright: ignore[reportPrivateImportUsage]
+    historial_mes = descargar_memoria_lineal()
+
+    prompt_sistema = f"""
+    System Context: You are a Senior Performance Analyst for Google Health Premium.
+
+    Historical Context (Linear Memory):
+    {historial_mes}
+
+    New Training Data (Lyfta CSV):
+    {csv_text}
+
+    Task:
+    1. Parse EVERY exercise in the CSV.
+    2. For each exercise: Compare weight/reps/tonnage with the historical log provided.
+    3. Determine if there was a PR (Personal Record), improvement, or stagnation for that specific movement.
+    4. Provide a technical analysis and a recovery directive for that specific muscle group.
+    5. After analyzing all exercises, provide a "Computo General" of the session.
+
+    LANGUAGE: Output all text values in Technical Spanish.
+
+    Output Format (Valid JSON ONLY):
+    {{
+        "ejercicios": [
+            {{
+                "nombre": "<nombre del ejercicio>",
+                "volumen_kg": <int>,
+                "status": "MEJORA/ESTANCAMIENTO/PR",
+                "analisis": "<analisis tecnico especifico>",
+                "directiva": "<accion inmediata para este grupo muscular>"
+            }}
+        ],
+        "computo_general": {{
+            "tonelaje_total": <int>,
+            "diagnostico_global": "<estado del SNC y fatiga acumulada>",
+            "directiva_maestra": "<ajuste nutricional o de descanso para hoy>"
+        }}
+    }}
+    """
+
+    print("[IA] Iniciando disección detallada por ejercicio...")
+    respuesta = modelo.generate_content(prompt_sistema)
+
+    # Limpieza y carga de JSON
+    json_crudo = respuesta.text.replace("```json", "").replace("```", "").strip()
+    res = json.loads(json_crudo)
+
+    # --- CONSTRUCCIÓN DEL LOG HIPER-ESPECÍFICO ---
+    timestamp = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    log_final = f"\n### [ {timestamp} ] REPORTE DE SESIÓN LYFTA\n"
+
+    # Iteramos por cada ejercicio para crear el desglose que pides
+    for ex in res['ejercicios']:
+        log_final += (
+            f"--- EJERCICIO: {ex['nombre'].upper()} ---\n"
+            f"Volumen: {ex['volumen_kg']}kg | Progresión: {ex['status']}\n"
+            f"Análisis: {ex['analisis']}\n"
+            f"Directiva: {ex['directiva']}\n\n"
+        )
+
+    # Añadimos el cómputo general al final
+    log_final += (
+        f"== CÓMPUTO GENERAL DE LA SESIÓN ==\n"
+        f"Tonelaje Total: {res['computo_general']['tonelaje_total']}kg\n"
+        f"Diagnóstico SNC: {res['computo_general']['diagnostico_global']}\n"
+        f"Directiva Maestra: {res['computo_general']['directiva_maestra']}\n"
+        f"-------------------------------------------\n"
+    )
+
+    # Persistencia en la Memoria Lineal de Drive
+    actualizar_memoria_lineal(log_final)
+
+    return res
+    
 def sincronizar_biometria_fit():
-    """Mutación V15: Persistencia Absoluta en Google Drive."""
+    """
+    Fallback alostático vía PULL. Muta el Gemelo Digital.
+    """
     try:
         estado = leer_estado_maestro(FILE_ID_MAESTRO)
         peso_actual = float(estado["biometria_actual"]["peso_kg"])
@@ -76,6 +200,10 @@ def sincronizar_biometria_fit():
             estado["restricciones_duras"]["calorias_objetivo"] = nuevo_deficit
 
             actualizar_estado_maestro(FILE_ID_MAESTRO, estado)
+
+            log_alostasis = f"[ALOSTASIS] Gemelo Digital mutado. Nuevo Peso: {nuevo_peso}kg. Nuevo Déficit: {nuevo_deficit}kcal."
+            actualizar_memoria_lineal(log_alostasis)
+
             print(f"[MUTACIÓN ALOSTÁTICA] Déficit: {nuevo_deficit}kcal | Proteína: {nueva_proteina}g")
             return True
 
@@ -84,53 +212,3 @@ def sincronizar_biometria_fit():
     except Exception as e:
         print(f"[ERROR DE EXTRACCIÓN FIT] {e}")
         return False
-
-def procesar_entrenamiento_llm(csv_text, estado_maestro):
-    """
-    Motor de Inferencia Gemini (Arquitectura Asíncrona V15).
-    Prompt estructurado en inglés para maximizar el rendimiento del LLM.
-    """
-    modelo = genai.GenerativeModel('gemini-1.5-pro') # pyright: ignore[reportPrivateImportUsage]
-
-    peso_actual = estado_maestro['biometria_actual'].get('peso_kg', 'N/A')
-    deficit_obj = estado_maestro['restricciones_duras'].get('calorias_objetivo', 'N/A')
-
-    prompt_sistema = f"""
-    System Context: You are the core cognitive engine for Google Health Premium, operating as an elite AI coach specializing in hypertrophy, allostasis, and neuromuscular recovery.
-
-    User Profile & Constraints:
-    - Training Protocol: Strict 5-day/week hypertrophy split.
-    - Current Weight: {peso_actual} kg.
-    - Caloric Deficit Target: {deficit_obj} kcal.
-    - Active Supplement Stack: Magnesium Bisglycinate, Omega-3, Creatine.
-
-    Raw Workout Data (CSV format from Lyfta):
-    {csv_text}
-
-    Execution Requirements:
-    1. Parse the CSV to calculate total tonnage and identify the primary muscular group or movement pattern (e.g., Push, Pull, Legs).
-    2. Correlate the neuromuscular demand (RPE, volume) with the user's biological constraints.
-    3. Generate a strict recovery directive. If severe CNS suppression is detected from the load, mandate an adjustment in sleep cycles or indicate specific replenishment needs for the active supplement stack.
-    4. LANGUAGE CONSTRAINT: You must process the logic in English, but ALL string values output in the JSON MUST be written in fluent, technical Spanish.
-
-    Output Format Requirements:
-    You must return a valid JSON object ONLY, adhering exactly to the following schema. Do not use Markdown formatting blocks (```json) in the final output string.
-
-    {{
-        "grupo_muscular": "<string in Spanish>",
-        "tonelaje_estimado": <number>,
-        "diagnostico_fatiga": "<string in Spanish, max 3 sentences>",
-        "directiva_recuperacion": "<string in Spanish, specific actionable advice>"
-    }}
-    """
-
-    respuesta = modelo.generate_content(prompt_sistema)
-
-    # Saneamiento del payload de salida
-    json_crudo = respuesta.text.strip()
-    if json_crudo.startswith("```json"):
-        json_crudo = json_crudo[7:]
-    if json_crudo.endswith("```"):
-        json_crudo = json_crudo[:-3]
-
-    return json.loads(json_crudo.strip())
