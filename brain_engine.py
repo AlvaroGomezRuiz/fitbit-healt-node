@@ -1,46 +1,41 @@
-import os
 import time
-from dotenv import set_key, load_dotenv
+import os
+import json
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from drive_engine import leer_estado_maestro, actualizar_estado_maestro
 
-ENV_PATH = "/app/.env" if os.path.exists("/app/.env") else ".env"
 TOKEN_PATH = "token.json"
+FILE_ID_MAESTRO = "1s2GSGjlxChGy39jUxJFDiijBCWKKg-T5"
 
 def recalcular_bmr(peso, altura, edad):
-    # Ecuación de Mifflin-St Jeor con variables 100% dinámicas
+    # Ecuación de Mifflin-St Jeor (Motor Alostático V15)
     return (10 * peso) + (6.25 * altura) - (5 * edad) + 5
 
 def sincronizar_biometria_fit():
-    """
-    Extracción Multidimensional (Pull).
-    El sistema audita la API central. Si detecta divergencias en la masa o estatura,
-    ejecuta una mutación del entorno y recalcula la síntesis proteica requerida.
-    """
-    if not os.path.exists(ENV_PATH) or not os.path.exists(TOKEN_PATH):
-        print(f"[ERROR CRÍTICO] Archivos de entorno inaccesibles.")
-        return False
-
-    load_dotenv(ENV_PATH)
-
-    # Lectura del estado biológico actual
-    peso_actual = float(os.getenv("WEIGHT_KG", 82))
-    altura_actual = float(os.getenv("HEIGHT_CM", 160))
-    edad_actual = int(os.getenv("YEARS", 19))
-
+    """Mutación V15: Persistencia Absoluta en Google Drive."""
     try:
-        creds = Credentials.from_authorized_user_file(TOKEN_PATH)
+        # Lectura del estado biológico actual desde la nube
+        estado = leer_estado_maestro(FILE_ID_MAESTRO)
+        peso_actual = float(estado["biometria_actual"]["peso_kg"])
+        altura_actual = float(estado["biometria_actual"]["altura_cm"])
+        edad_actual = int(estado["identidad"]["edad"])
+
+        token_env = os.environ.get("GOOGLE_OAUTH_TOKEN_JSON")
+        if token_env:
+            # Modo V15 Producción
+            creds = Credentials.from_authorized_user_info(json.loads(token_env))
+        else:
+            # Modo Desarrollo Local
+            creds = Credentials.from_authorized_user_file(TOKEN_PATH)
+
         fitness_service = build('fitness', 'v1', credentials=creds)
 
         end_time = int(time.time() * 1000)
-        start_time = end_time - 86400000 # Ventana de 24 horas
+        start_time = end_time - 86400000
 
-        # Petición de métricas combinadas (Peso y Altura)
         body = {
-            "aggregateBy": [
-                {"dataTypeName": "com.google.weight"},
-                {"dataTypeName": "com.google.height"}
-            ],
+            "aggregateBy": [{"dataTypeName": "com.google.weight"}, {"dataTypeName": "com.google.height"}],
             "bucketByTime": {"durationMillis": 86400000},
             "startTimeMillis": start_time,
             "endTimeMillis": end_time
@@ -48,18 +43,14 @@ def sincronizar_biometria_fit():
 
         response = fitness_service.users().dataset().aggregate(userId='me', body=body).execute()
 
-        nuevo_peso = peso_actual
-        nueva_altura = altura_actual
+        nuevo_peso, nueva_altura = peso_actual, altura_actual
         mutacion_requerida = False
 
-        # Minería de orígenes de datos
         for bucket in response.get('bucket', []):
             for dataset in bucket.get('dataset', []):
                 for point in dataset.get('point', []):
                     val = point.get('value', [])[0].get('fpVal')
-                    if not val:
-                        continue
-
+                    if not val: continue
                     source = dataset.get('dataSourceId', '').lower()
 
                     if 'weight' in source and round(val, 1) != round(peso_actual, 1):
@@ -71,25 +62,18 @@ def sincronizar_biometria_fit():
                             nueva_altura = round(altura_cm, 1)
                             mutacion_requerida = True
 
-        # Ejecución del recálculo orgánico
         if mutacion_requerida:
             nueva_proteina = int(nuevo_peso * 2.2)
             nuevo_bmr = recalcular_bmr(nuevo_peso, nueva_altura, edad_actual)
-            nuevo_deficit = int(nuevo_bmr - 400) # Algoritmo de preservación magra
+            nuevo_deficit = int(nuevo_bmr - 400)
 
-            # Sobrescritura de estado en el nodo
-            set_key(ENV_PATH, "WEIGHT_KG", str(nuevo_peso))
-            set_key(ENV_PATH, "HEIGHT_CM", str(nueva_altura))
-            set_key(ENV_PATH, "PROTEIN_DAILY_DOSE_GRAMS", str(nueva_proteina))
-            set_key(ENV_PATH, "CALORIC_TARGET_DEFICIT", str(nuevo_deficit))
+            estado["biometria_actual"]["peso_kg"] = nuevo_peso
+            estado["biometria_actual"]["altura_cm"] = nueva_altura
+            estado["restricciones_duras"]["proteina_g"] = nueva_proteina
+            estado["restricciones_duras"]["calorias_objetivo"] = nuevo_deficit
 
-            # Aplicación de Hard Constraints (Inyección forzada)
-            set_key(ENV_PATH, "CREATINA_DAILY_DOSE_GRAMS", "7")
-            set_key(ENV_PATH, "BAN_MAGNESIO", "True")
-            set_key(ENV_PATH, "BAN_OMEGA3", "True")
-
-            print(f"[MUTACIÓN ALOSTÁTICA EJECUTADA] Parámetros: {nuevo_peso}kg | {nueva_altura}cm | {edad_actual} años.")
-            print(f"[NUEVO OBJETIVO] Déficit: {nuevo_deficit}kcal | Proteína: {nueva_proteina}g")
+            actualizar_estado_maestro(FILE_ID_MAESTRO, estado)
+            print(f"[MUTACIÓN ALOSTÁTICA] Déficit: {nuevo_deficit}kcal | Proteína: {nueva_proteina}g")
             return True
 
         return False
