@@ -29,29 +29,43 @@ Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH
 """
 
 def extraer_metadatos_entreno(texto_crudo):
-    """Identifica Fecha y Tipo de Rutina."""
+    """Identifica Fecha y Tipo de Rutina con Telemetría Activa."""
     modelo = GenerativeModel('gemini-1.5-flash')
 
     prompt = f"""
-    Analiza este texto de entrenamiento y extrae la fecha y el tipo de rutina.
+    Analiza este texto y extrae la fecha y el tipo de rutina.
     RUTINA SEMANAL: {RUTINA_MAESTRA}
 
     1. Fecha (YYYY-MM-DD o 'TODAY').
     2. Tipo (PUSH, PULL, LEG). Si no se especifica, usa la rutina del día de la semana.
 
-    Responde SOLO JSON: {{"fecha": "YYYY-MM-DD", "tipo": "PUSH/PULL/LEG"}}
+    RESPONDE ÚNICA Y EXCLUSIVAMENTE CON EL FORMATO JSON. NADA DE TEXTO EXTRA.
+    {{"fecha": "YYYY-MM-DD", "tipo": "PUSH"}}
     TEXTO: {texto_crudo[:800]}
     """
     try:
         res = modelo.generate_content(prompt)
         clean_json = res.text.replace("```json", "").replace("```", "").strip()
+
+        # Intentamos parsear el JSON
         data = json.loads(clean_json)
 
         fecha_str = data.get('fecha', 'TODAY')
         fecha_dt = datetime.now() if fecha_str == "TODAY" else datetime.strptime(fecha_str, "%Y-%m-%d")
         return fecha_dt, data.get('tipo', 'ENTRENO').upper()
+
     except Exception as e:
-        print(f"[ERROR IA METADATOS] {e}")
+        # INYECCIÓN DE TELEMETRÍA: Forzamos el log a Drive
+        from drive_engine import volcar_log_sistema
+        mensaje_error = f"ERROR CRÍTICO EN IA METADATOS:\nExcepción: {str(e)}\n\n"
+
+        # Si el error es al procesar el texto de la IA, lo capturamos también
+        try:
+            mensaje_error += f"Respuesta cruda de la IA: {res.text}"
+        except:
+            mensaje_error += "No se recibió respuesta de la IA."
+
+        volcar_log_sistema(mensaje_error, f"DEBUG_IA_METADATOS_{datetime.now().strftime('%H%M%S')}.txt")
         return datetime.now(), "ENTRENO"
 
 def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
