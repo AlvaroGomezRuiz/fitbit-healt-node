@@ -2,7 +2,11 @@ import os
 import json
 import time
 from datetime import datetime
-import google.generativeai as genai # pyright: ignore[reportMissingImports]
+
+import google.generativeai as genai
+# Bypass arquitectónico para Pylance/Pyright: Importación directa silenciada
+from google.generativeai import GenerativeModel # type: ignore
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -13,7 +17,9 @@ from drive_engine import (
     actualizar_memoria_lineal
 )
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY")) # pyright: ignore[reportPrivateImportUsage]
+# CONFIGURACIÓN DE SEGURIDAD
+api_key = os.environ.get("GEMINI_API_KEY")
+genai.configure(api_key=api_key) # type: ignore
 
 TOKEN_PATH = "token.json"
 FILE_ID_MAESTRO = "1POEuCbmOEIURg7UycPsbIrH62uQvJgLI"
@@ -23,53 +29,95 @@ Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH
 """
 
 def extraer_metadatos_entreno(texto_crudo):
-    # pyright: ignore[reportPrivateImportUsage]
-    modelo_flash = genai.GenerativeModel('gemini-1.5-flash') #type: ignore
-    prompt = f"Analiza la fecha (YYYY-MM-DD o 'TODAY') y el tipo (PUSH, PULL, LEG) según esta rutina: {RUTINA_MAESTRA}. Responde solo JSON: {{\"fecha\": \"...\", \"tipo\": \"...\"}}. Texto: {texto_crudo[:800]}"
+    """Identifica Fecha y Tipo de Rutina."""
+    modelo = GenerativeModel('gemini-1.5-flash')
+
+    prompt = f"""
+    Analiza este texto de entrenamiento y extrae la fecha y el tipo de rutina.
+    RUTINA SEMANAL: {RUTINA_MAESTRA}
+
+    1. Fecha (YYYY-MM-DD o 'TODAY').
+    2. Tipo (PUSH, PULL, LEG). Si no se especifica, usa la rutina del día de la semana.
+
+    Responde SOLO JSON: {{"fecha": "YYYY-MM-DD", "tipo": "PUSH/PULL/LEG"}}
+    TEXTO: {texto_crudo[:800]}
+    """
     try:
-        res = modelo_flash.generate_content(prompt)
-        data = json.loads(res.text.replace("```json", "").replace("```", "").strip())
-        fecha_dt = datetime.now() if data['fecha'] == "TODAY" else datetime.strptime(data['fecha'], "%Y-%m-%d")
-        return fecha_dt, data['tipo'].upper()
-    except:
+        res = modelo.generate_content(prompt)
+        clean_json = res.text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(clean_json)
+
+        fecha_str = data.get('fecha', 'TODAY')
+        fecha_dt = datetime.now() if fecha_str == "TODAY" else datetime.strptime(fecha_str, "%Y-%m-%d")
+        return fecha_dt, data.get('tipo', 'ENTRENO').upper()
+    except Exception as e:
+        print(f"[ERROR IA METADATOS] {e}")
         return datetime.now(), "ENTRENO"
 
 def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
-    # pyright: ignore[reportPrivateImportUsage]
-    modelo_pro = genai.GenerativeModel('gemini-1.5-pro') #type: ignore
+    """Analiza la sesión y actualiza el historial."""
+    modelo = GenerativeModel('gemini-1.5-flash')
     historial_mes = descargar_memoria_lineal()
-    prompt = f"Analiza biomecánicamente este entreno: {raw_text}. Historial: {historial_mes}. Estado: {json.dumps(estado_maestro)}. Responde JSON con 'ejercicios' y 'computo_general'."
-    respuesta = modelo_pro.generate_content(prompt)
-    res = json.loads(respuesta.text.replace("```json", "").replace("```", "").strip())
 
-    log_final = f"\n### [ {datetime.now().isoformat()} ] REPORTE\n"
-    for ex in res['ejercicios']:
-        log_final += f"**{ex['nombre']}**: {ex['volumen_kg']}kg | {ex['status']}\n"
-    actualizar_memoria_lineal(log_final)
-    return res
+    prompt = f"""
+    Analiza biomecánicamente este entreno: {raw_text}.
+    Contexto Historial: {historial_mes}
+    Estado Biológico: {json.dumps(estado_maestro)}
+
+    Extrae ejercicios, volumen y progreso.
+    Responde SOLO JSON con llaves 'ejercicios' y 'computo_general'.
+    """
+    try:
+        respuesta = modelo.generate_content(prompt)
+        clean_json = respuesta.text.replace("```json", "").replace("```", "").strip()
+        res = json.loads(clean_json)
+
+        log_final = f"\n### [ {datetime.now().isoformat()} ] REPORTE V15.5\n"
+        for ex in res.get('ejercicios', []):
+            log_final += f"**{ex.get('nombre')}**: {ex.get('volumen_kg')}kg | {ex.get('status')}\n"
+
+        actualizar_memoria_lineal(log_final)
+        return res
+    except Exception as e:
+        print(f"[ERROR IA ANÁLISIS] {e}")
+        return {"error": str(e)}
 
 def procesar_telemetria_nativa_api(payload):
+    """Procesamiento de datos de Fitbit."""
     historial_mes = descargar_memoria_lineal()
-    # pyright: ignore[reportPrivateImportUsage]
-    modelo = genai.GenerativeModel('gemini-1.5-pro') #type: ignore
-    res = modelo.generate_content(f"Telemetría: {json.dumps(payload)}. Contexto: {historial_mes}")
-    actualizar_memoria_lineal(f"[FITBIT] {res.text.strip()}")
+    modelo = GenerativeModel('gemini-1.5-flash')
+    try:
+        res = modelo.generate_content(f"Telemetría: {json.dumps(payload)}. Contexto: {historial_mes}")
+        actualizar_memoria_lineal(f"[FITBIT] {res.text.strip()}")
+    except:
+        pass
 
 def sincronizar_biometria_fit():
+    """Sincroniza peso desde Google Health Connect."""
     try:
         estado = leer_estado_maestro(FILE_ID_MAESTRO)
         token_env = os.environ.get("GOOGLE_OAUTH_TOKEN_JSON")
         creds = Credentials.from_authorized_user_info(json.loads(token_env)) if token_env else Credentials.from_authorized_user_file(TOKEN_PATH)
         service = build('fitness', 'v1', credentials=creds)
+
         ahora = int(time.time() * 1000)
-        res = service.users().dataset().aggregate(userId='me', body={"aggregateBy": [{"dataTypeName": "com.google.weight"}], "bucketByTime": {"durationMillis": 86400000}, "startTimeMillis": ahora - 86400000, "endTimeMillis": ahora}).execute()
+        res = service.users().dataset().aggregate(userId='me', body={
+            "aggregateBy": [{"dataTypeName": "com.google.weight"}],
+            "bucketByTime": {"durationMillis": 86400000},
+            "startTimeMillis": ahora - 86400000,
+            "endTimeMillis": ahora
+        }).execute()
+
         for bucket in res.get('bucket', []):
             for dataset in bucket.get('dataset', []):
                 for point in dataset.get('point', []):
                     val = point.get('value', [])[0].get('fpVal')
-                    if val:
+                    if val and round(val, 1) != round(estado["biometria_actual"]["peso_kg"], 1):
                         estado["biometria_actual"]["peso_kg"] = round(val, 1)
                         actualizar_estado_maestro(FILE_ID_MAESTRO, estado)
+                        actualizar_memoria_lineal(f"[PESO] Sincronizado: {val}kg.")
                         return True
         return False
-    except: return False
+    except Exception as e:
+        print(f"[ERROR FIT SYNC] {e}")
+        return False
