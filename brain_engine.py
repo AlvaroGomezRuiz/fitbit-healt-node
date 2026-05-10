@@ -24,28 +24,45 @@ FILE_ID_MAESTRO = "1POEuCbmOEIURg7UycPsbIrH62uQvJgLI"
 RUTINA_MAESTRA = "Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH"
 TOKEN_PATH = "token.json"
 
-def ejecutar_peticion_rest(prompt, modelo="gemini-3.1-flash-lite"):
-    """Inferencia REST optimizada para la serie Gemini 3.1."""
+def ejecutar_peticion_rest(prompt, modelo_preferido="gemini-3.1-flash-lite"):
+    """
+    Inferencia con sistema de redundancia.
+    Si el modelo falla por cuota (429), intenta con el siguiente más disponible.
+    """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         volcar_log_sistema("MISSING_API_KEY", f"ERR_API_{datetime.now().strftime('%H%M%S')}.txt")
         return None
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048}
-    }
+    # Jerarquía de modelos para asegurar respuesta
+    modelos = [modelo_preferido, "gemini-3.1-flash-lite", "gemini-1.5-flash"]
 
-    try:
-        resp = requests.post(url, json=payload, timeout=30)
-        if resp.status_code != 200:
-            volcar_log_sistema(f"HTTP_{resp.status_code}_{resp.text}", "ERR_REST.txt")
-            return None
-        return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        volcar_log_sistema(str(e), "ERR_CONNECTION.txt")
-        return None
+    # Eliminar duplicados manteniendo el orden
+    modelos = list(dict.fromkeys(modelos))
+
+    for modelo in modelos:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048}
+        }
+
+        try:
+            resp = requests.post(url, json=payload, timeout=30)
+
+            if resp.status_code == 200:
+                return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+            if resp.status_code == 429:
+                volcar_log_sistema(f"CUOTA_AGOTADA en {modelo}, reintentando con siguiente...", "LOG_CUOTA.txt")
+                continue # Salta al siguiente modelo en la lista
+
+            volcar_log_sistema(f"HTTP_{resp.status_code} en {modelo}", "ERR_REST.txt")
+        except Exception as e:
+            volcar_log_sistema(f"Error conexión {modelo}: {str(e)}", "ERR_NET.txt")
+            continue
+
+    return None
 
 def salvar_reporte_en_drive(contenido, subcarpeta, prefijo):
     """Persistencia de reportes de IA en la jerarquía del Data Lake."""
@@ -76,17 +93,18 @@ def generar_resumen_pre_entreno():
     ROUTINE: {RUTINA_MAESTRA}
 
     CRITICAL PROTOCOLS:
-    1. Cross-reference Sleep/HRV telemetry with previous loads (e.g. 100kg Chest Press).
-    2. MANDATORY: Verify 7g Creatine dosage and emphasize its intake.
-    3. VETO SYSTEM: Explicitly warn to AVOID Magnesium and Omega-3 in this morning window.
-    4. PREDICTION: Set intensity and target volume based on recovery status.
+    1. Cross-reference Sleep/HRV telemetry with previous loads.
+    2. MANDATORY: Verify 7g Creatine dosage.
+    3. VETO SYSTEM: Avoid Magnesium and Omega-3 in morning.
+    4. PREDICTION: Set targets based on recovery.
 
-    OUTPUT: Spanish language. Senior technical tone. Markdown format.
+    OUTPUT: Spanish. Senior technical tone. Markdown format.
     """
 
+    # Intentamos con Pro, pero si no hay cuota, Flash Lite entrará al rescate
     report = ejecutar_peticion_rest(english_prompt, "gemini-3.1-pro-preview")
     if report:
-        actualizar_memoria_lineal(f"[SYSTEM] Briefing matutino generado con éxito.")
+        actualizar_memoria_lineal(f"[SYSTEM] Briefing matutino generado.")
         return salvar_reporte_en_drive(report, "02_RESUMEN_DIARIO_IA", "PRE_ENTRENO")
     return False
 
@@ -114,27 +132,13 @@ def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
     PERFORMANCE AUDIT: Analyze this workout session.
     RAW DATA: {raw_text}
     USER CONTEXT: {json.dumps(estado_maestro)}
-
-    OBJECTIVES:
-    - Extract exercises, sets, reps, and load.
-    - Compare with previous sessions.
-    - Identify PRs or strength plateaus.
-
     OUTPUT: Spanish. Professional biomechanical summary.
     """
-    res = ejecutar_peticion_rest(english_prompt, "gemini-3.1-pro-preview")
+    res = ejecutar_peticion_rest(english_prompt, "gemini-3.1-flash-lite")
     if res:
         actualizar_memoria_lineal(f"\n### REPORTE POST-ENTRENO\n{res}")
         return res
     return None
-
-def procesar_telemetria_nativa_api(payload):
-    """Procesamiento de datos biométricos en tiempo real."""
-    historial_mes = descargar_memoria_lineal()
-    english_prompt = f"Analyze this telemetry payload: {json.dumps(payload)}. Context: {historial_mes}. Spanish summary."
-    resultado = ejecutar_peticion_rest(english_prompt, "gemini-3.1-flash-lite")
-    if resultado:
-        actualizar_memoria_lineal(f"[TELEMETRÍA] {resultado.strip()}")
 
 def sincronizar_biometria_fit():
     """Sincronización del peso corporal desde Google Fitness API."""
