@@ -2,11 +2,7 @@ import os
 import json
 import time
 from datetime import datetime
-
-import google.generativeai as genai
-# Bypass arquitectónico para Pylance/Pyright
-from google.generativeai import GenerativeModel # type: ignore
-
+import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -18,95 +14,95 @@ from drive_engine import (
     volcar_log_sistema
 )
 
-# CONFIGURACIÓN DE SEGURIDAD
-api_key = os.environ.get("GEMINI_API_KEY")
-genai.configure(api_key=api_key) # type: ignore
-
 TOKEN_PATH = "token.json"
 FILE_ID_MAESTRO = "1POEuCbmOEIURg7UycPsbIrH62uQvJgLI"
+RUTINA_MAESTRA = "Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH"
 
-RUTINA_MAESTRA = """
-Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH
-"""
+def ejecutar_peticion_rest(prompt):
+    """Bypass de arquitectura REST HTTP directo a AI Studio."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        volcar_log_sistema("ERROR FATAL: La variable GEMINI_API_KEY no existe en Cloud Run.", f"ERR_API_{datetime.now().strftime('%H%M%S')}.txt")
+        return None
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1}
+    }
+
+    try:
+        resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
+        data = resp.json()
+
+        if resp.status_code != 200:
+            volcar_log_sistema(f"HTTP {resp.status_code}: {json.dumps(data)}", f"ERR_HTTP_{datetime.now().strftime('%H%M%S')}.txt")
+            return None
+
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception as e:
+        volcar_log_sistema(f"Fallo de conexión REST: {str(e)}", f"ERR_NET_{datetime.now().strftime('%H%M%S')}.txt")
+        return None
 
 def extraer_metadatos_entreno(texto_crudo):
-    """Identifica Fecha y Tipo de Rutina con Telemetría Activa."""
-    # Corrección de Endpoint: Uso de alias explícito
-    modelo = GenerativeModel('gemini-1.5-flash-latest')
-
     prompt = f"""
     Analiza este texto y extrae la fecha y el tipo de rutina.
     RUTINA SEMANAL: {RUTINA_MAESTRA}
-
     1. Fecha (YYYY-MM-DD o 'TODAY').
-    2. Tipo (PUSH, PULL, LEG). Si no se especifica, usa la rutina del día de la semana.
-
-    RESPONDE ÚNICA Y EXCLUSIVAMENTE CON EL FORMATO JSON. NADA DE TEXTO EXTRA.
-    {{"fecha": "YYYY-MM-DD", "tipo": "PUSH"}}
+    2. Tipo (PUSH, PULL, LEG). Si no se especifica, usa la rutina del día.
+    RESPONDE SOLO JSON: {{"fecha": "YYYY-MM-DD", "tipo": "PUSH"}}
     TEXTO: {texto_crudo[:800]}
     """
-    try:
-        res = modelo.generate_content(prompt)
-        clean_json = res.text.replace("```json", "").replace("```", "").strip()
-        data = json.loads(clean_json)
+    resultado_texto = ejecutar_peticion_rest(prompt)
 
-        fecha_str = data.get('fecha', 'TODAY')
-        fecha_dt = datetime.now() if fecha_str == "TODAY" else datetime.strptime(fecha_str, "%Y-%m-%d")
-        return fecha_dt, data.get('tipo', 'ENTRENO').upper()
+    if resultado_texto:
+        try:
+            clean_json = resultado_texto.replace("```json", "").replace("```", "").strip()
+            data = json.loads(clean_json)
+            fecha_str = data.get('fecha', 'TODAY')
+            fecha_dt = datetime.now() if fecha_str == "TODAY" else datetime.strptime(fecha_str, "%Y-%m-%d")
+            return fecha_dt, data.get('tipo', 'ENTRENO').upper()
+        except Exception as e:
+            volcar_log_sistema(f"Fallo en parseo JSON: {str(e)}", f"ERR_PARSE_{datetime.now().strftime('%H%M%S')}.txt")
 
-    except Exception as e:
-        mensaje_error = f"ERROR CRÍTICO EN IA METADATOS:\nExcepción: {str(e)}\n"
-        volcar_log_sistema(mensaje_error, f"DEBUG_IA_METADATOS_{datetime.now().strftime('%H%M%S')}.txt")
-        return datetime.now(), "ENTRENO"
+    return datetime.now(), "ENTRENO"
 
 def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
-    """Analiza la sesión y actualiza el historial."""
-    # Corrección de Endpoint: Uso de alias explícito
-    modelo = GenerativeModel('gemini-1.5-flash-latest')
     historial_mes = descargar_memoria_lineal()
-
     prompt = f"""
     Analiza biomecánicamente este entreno: {raw_text}.
     Contexto Historial: {historial_mes}
-    Estado Biológico: {json.dumps(estado_maestro)}
-
+    Estado: {json.dumps(estado_maestro)}
     Extrae ejercicios, volumen y progreso.
     Responde SOLO JSON con llaves 'ejercicios' y 'computo_general'.
     """
-    try:
-        respuesta = modelo.generate_content(prompt)
-        clean_json = respuesta.text.replace("```json", "").replace("```", "").strip()
-        res = json.loads(clean_json)
+    resultado_texto = ejecutar_peticion_rest(prompt)
 
-        log_final = f"\n### [ {datetime.now().isoformat()} ] REPORTE V15.5\n"
-        for ex in res.get('ejercicios', []):
-            log_final += f"**{ex.get('nombre')}**: {ex.get('volumen_kg')}kg | {ex.get('status')}\n"
-
-        actualizar_memoria_lineal(log_final)
-        return res
-    except Exception as e:
-        volcar_log_sistema(f"ERROR IA ANÁLISIS: {str(e)}", f"DEBUG_IA_ANALISIS_{datetime.now().strftime('%H%M%S')}.txt")
-        return {"error": str(e)}
+    if resultado_texto:
+        try:
+            clean_json = resultado_texto.replace("```json", "").replace("```", "").strip()
+            res = json.loads(clean_json)
+            log_final = f"\n### [ {datetime.now().isoformat()} ] REPORTE V15.5\n"
+            for ex in res.get('ejercicios', []):
+                log_final += f"**{ex.get('nombre')}**: {ex.get('volumen_kg')}kg | {ex.get('status')}\n"
+            actualizar_memoria_lineal(log_final)
+            return res
+        except:
+            pass
+    return {"error": "Fallo en motor de inferencia"}
 
 def procesar_telemetria_nativa_api(payload):
-    """Procesamiento de datos de Fitbit."""
     historial_mes = descargar_memoria_lineal()
-    # Corrección de Endpoint: Uso de alias explícito
-    modelo = GenerativeModel('gemini-1.5-flash-latest')
-    try:
-        res = modelo.generate_content(f"Telemetría: {json.dumps(payload)}. Contexto: {historial_mes}")
-        actualizar_memoria_lineal(f"[FITBIT] {res.text.strip()}")
-    except:
-        pass
+    resultado = ejecutar_peticion_rest(f"Telemetría: {json.dumps(payload)}. Contexto: {historial_mes}")
+    if resultado:
+        actualizar_memoria_lineal(f"[FITBIT] {resultado.strip()}")
 
 def sincronizar_biometria_fit():
-    """Sincroniza peso desde Google Health Connect."""
     try:
         estado = leer_estado_maestro(FILE_ID_MAESTRO)
         token_env = os.environ.get("GOOGLE_OAUTH_TOKEN_JSON")
         creds = Credentials.from_authorized_user_info(json.loads(token_env)) if token_env else Credentials.from_authorized_user_file(TOKEN_PATH)
         service = build('fitness', 'v1', credentials=creds)
-
         ahora = int(time.time() * 1000)
         res = service.users().dataset().aggregate(userId='me', body={
             "aggregateBy": [{"dataTypeName": "com.google.weight"}],
@@ -125,6 +121,5 @@ def sincronizar_biometria_fit():
                         actualizar_memoria_lineal(f"[PESO] Sincronizado: {val}kg.")
                         return True
         return False
-    except Exception as e:
-        print(f"[ERROR FIT SYNC] {e}")
+    except:
         return False
