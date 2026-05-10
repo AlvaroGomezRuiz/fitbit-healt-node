@@ -10,3 +10,4 @@ python-dotenv>=1.0.0
 requests>=2.31.0          # CRÍTICO: Permite el bypass de red hacia Gemini 3.1
 python-multipart>=0.0.6   # CRÍTICO: Requerido por FastAPI para UploadFile
 pypdf>=4.0.0
+pytz>=2024.1
