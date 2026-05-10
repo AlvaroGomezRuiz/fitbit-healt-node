@@ -26,6 +26,7 @@ from drive_engine import (
 app = FastAPI(title="Google Health Premium Node", version="15.5")
 
 def extraer_texto_pdf(file_content: bytes) -> str:
+    """Extracción segura de vectores de texto en archivos PDF."""
     if PdfReader is None: return "Error: pypdf ausente."
     try:
         reader = PdfReader(io.BytesIO(file_content))
@@ -33,21 +34,23 @@ def extraer_texto_pdf(file_content: bytes) -> str:
     except: return "Error en PDF"
 
 def pipeline_entrenamiento_completo(content: bytes, extension: str, raw_text: str):
+    """Ejecución asíncrona del flujo de ingesta y análisis."""
     try:
         fecha_dt, tipo_rutina = extraer_metadatos_entreno(raw_text)
         volcar_archivo_raw(content, extension, fecha_dt, tipo_rutina)
         estado_actual = leer_estado_maestro(FILE_ID_MAESTRO)
         procesar_entrenamiento_llm(raw_text, estado_actual, extension)
     except Exception as e:
-        # Usamos volcar_log_sistema de forma segura
+        # Volcado de telemetría ante fallos críticos en background
         msg_error = f"Error en pipeline: {str(e)}"
         volcar_log_sistema(msg_error, f"ERR_{datetime.datetime.now().strftime('%H%M%S')}.txt")
 
 @app.post("/webhook/lyfta_workout")
 async def recibir_entreno_lyfta(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """Punto de entrada primario para sesiones de entrenamiento."""
     content = await file.read()
 
-    # SOLUCIÓN AL ERROR DE LINTER: Verificamos si el nombre existe
+    # Sanitización de metadatos del archivo entrante
     filename = file.filename if file.filename else "entreno.txt"
     ext = filename.split('.')[-1].lower() if '.' in filename else 'txt'
 
@@ -61,12 +64,14 @@ async def recibir_entreno_lyfta(background_tasks: BackgroundTasks, file: UploadF
 
 @app.post("/webhook/google_health_api")
 async def recibir_telemetria(request: Request, background_tasks: BackgroundTasks):
+    """Punto de entrada secundario para streaming de biométricos."""
     payload = await request.json()
     background_tasks.add_task(procesar_telemetria_nativa_api, payload)
     return {"status": "accepted"}
 
 @app.post("/cron/diario")
 async def sincronizacion():
+    """Endpoint de invocación cronometrada (Cloud Scheduler)."""
     return {"ejecutado": sincronizar_biometria_fit()}
 
 if __name__ == "__main__":

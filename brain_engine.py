@@ -18,14 +18,14 @@ TOKEN_PATH = "token.json"
 FILE_ID_MAESTRO = "1POEuCbmOEIURg7UycPsbIrH62uQvJgLI"
 RUTINA_MAESTRA = "Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH"
 
-def ejecutar_peticion_rest(prompt):
-    """Bypass de arquitectura REST HTTP directo a AI Studio."""
+def ejecutar_peticion_rest(prompt, modelo="gemini-3.1-flash-lite"):
+    """Inferencia HTTP con enrutamiento dinámico de modelos."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         volcar_log_sistema("ERROR FATAL: La variable GEMINI_API_KEY no existe en Cloud Run.", f"ERR_API_{datetime.now().strftime('%H%M%S')}.txt")
         return None
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.1}
@@ -53,7 +53,8 @@ def extraer_metadatos_entreno(texto_crudo):
     RESPONDE SOLO JSON: {{"fecha": "YYYY-MM-DD", "tipo": "PUSH"}}
     TEXTO: {texto_crudo[:800]}
     """
-    resultado_texto = ejecutar_peticion_rest(prompt)
+    # Flash Lite: Máxima velocidad para parseo estructural
+    resultado_texto = ejecutar_peticion_rest(prompt, "gemini-3.1-flash-lite")
 
     if resultado_texto:
         try:
@@ -76,7 +77,8 @@ def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
     Extrae ejercicios, volumen y progreso.
     Responde SOLO JSON con llaves 'ejercicios' y 'computo_general'.
     """
-    resultado_texto = ejecutar_peticion_rest(prompt)
+    # Pro Preview: Capacidad de razonamiento superior para análisis biomecánico
+    resultado_texto = ejecutar_peticion_rest(prompt, "gemini-3.1-pro-preview")
 
     if resultado_texto:
         try:
@@ -93,7 +95,8 @@ def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
 
 def procesar_telemetria_nativa_api(payload):
     historial_mes = descargar_memoria_lineal()
-    resultado = ejecutar_peticion_rest(f"Telemetría: {json.dumps(payload)}. Contexto: {historial_mes}")
+    # Flash Lite: Baja latencia para streams de telemetría continuos
+    resultado = ejecutar_peticion_rest(f"Telemetría: {json.dumps(payload)}. Contexto: {historial_mes}", "gemini-3.1-flash-lite")
     if resultado:
         actualizar_memoria_lineal(f"[FITBIT] {resultado.strip()}")
 

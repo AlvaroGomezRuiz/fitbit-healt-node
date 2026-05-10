@@ -3,8 +3,8 @@ import sys
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 # SCOPES V15: Acceso total a salud y archivos.
-# Estos permisos son obligatorios para que Gemini pueda leer tu VFC,
-# tu SpO2 y organizar tus carpetas de entrenamiento.
+# Estos permisos son obligatorios para que el sistema pueda leer tu VFC,
+# tu SpO2 y organizar tus carpetas de entrenamiento en Drive.
 SCOPES = [
     'https://www.googleapis.com/auth/fitness.sleep.read',
     'https://www.googleapis.com/auth/fitness.body.read',
@@ -50,7 +50,7 @@ def generar_llave_maestra():
         print("1. Abre 'token.json' y copia TODO su contenido.")
         print("2. Ve a tu panel de Google Cloud Run.")
         print("3. Pega el contenido en la variable: GOOGLE_OAUTH_TOKEN_JSON")
-        print("4. ¡Tu Coach ya tiene permiso para operar!")
+        print("4. ¡Tu motor ya tiene permiso para operar!")
         print("==================================================")
 
     except Exception as e:
