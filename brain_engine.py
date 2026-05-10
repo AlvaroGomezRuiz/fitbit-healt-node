@@ -81,3 +81,4 @@ def sincronizar_biometria_fit():
     except Exception as e:
         print(f"[ERROR DE EXTRACCIÓN] {e}")
         return False
+
