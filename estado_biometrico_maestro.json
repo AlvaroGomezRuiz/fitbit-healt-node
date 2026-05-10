@@ -1,0 +1,30 @@
+{
+    "identidad": {
+      "edad": 19,
+      "genero": "MALE"
+    },
+    "biometria_actual": {
+      "peso_kg": 82.0,
+      "altura_cm": 160.0,
+      "tendencia_peso_7dias": 0.0
+    },
+    "restricciones_duras": {
+      "calorias_objetivo": 2100,
+      "proteina_g": 180,
+      "creatina_g": 7,
+      "vetos_suplementacion": ["MAGNESIO", "OMEGA3"],
+      "protocolo_sales_activado": true
+    },
+    "parametros_recuperacion": {
+      "entrenos_semanales": 5,
+      "sueño_minimo_h": 7.5,
+      "objetivo_pasos": 11000,
+      "max_perdida_fuerza_pct": 10.0
+    },
+    "estado_alostatico": {
+      "snc_fatiga_acumulada": 0,
+      "media_hrv_7dias": 0,
+      "fuerza_perdida_actual_pct": 0,
+      "fecha_ultima_sincronizacion": "2026-05-10"
+    }
+  }
