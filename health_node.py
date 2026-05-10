@@ -1,14 +1,14 @@
 import os
 import datetime
 import json
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File
 import uvicorn
 
-# Importaciones de tus motores V15
-from brain_engine import sincronizar_biometria_fit, FILE_ID_MAESTRO
-from drive_engine import leer_estado_maestro, volcar_json_diario
+# Importaciones de tus motores V15 (Asegúrate de haber guardado los cambios previos en estos archivos)
+from brain_engine import sincronizar_biometria_fit, FILE_ID_MAESTRO, procesar_entrenamiento_llm
+from drive_engine import leer_estado_maestro, volcar_json_ia, volcar_entreno_lyfta, volcar_log_sistema
 
-app = FastAPI(title="Fitbit Health Node - V15 Ecosistema Autónomo")
+app = FastAPI(title="Fitbit Health Node - Google Health Premium Coach (V15)")
 
 def get_daily_hydration():
     """Protocolo de nutrición de élite basado en el día de la semana."""
@@ -34,11 +34,62 @@ def analyze_recovery(hrv_current, sleep_deep_mins, temp_delta):
         alerts.append("Fase profunda insuficiente para síntesis proteica óptima.")
     return {"status": status, "alerts": alerts}
 
+def pipeline_cognitivo_segundo_plano(csv_text: str):
+    """
+    Worker asíncrono para ingesta, inferencia y persistencia de hipertrofia.
+    Ejecuta el protocolo de IA sin bloquear la respuesta de la app de origen.
+    """
+    try:
+        # 1. Ingesta del Raw Data en la ruta estricta
+        volcar_entreno_lyfta(csv_text)
+        print("[SISTEMA] CSV de Lyfta persistido en conducto 01_LYFTA_RAW.")
+
+        # 2. Sincronización de Biometría (Google Fit)
+        print("[SISTEMA] Sincronizando biometría periférica...")
+        sincronizar_biometria_fit()
+
+        # 3. Carga del Contexto Biológico Actualizado
+        estado_actual = leer_estado_maestro(FILE_ID_MAESTRO)
+
+        # 4. Inferencia Cognitiva (RAG / Gemini)
+        print("[IA] Ejecutando modelo de correlación biomecánica y alostasis...")
+        diagnostico_ia = procesar_entrenamiento_llm(csv_text, estado_actual)
+
+        # 5. Persistencia del Dictamen
+        timestamp = datetime.datetime.now().strftime('%H%M')
+        nombre_reporte = f"DIAGNOSTICO_COACH_ENTRENO_{timestamp}.json"
+        volcar_json_ia(diagnostico_ia, nombre_reporte)
+        print(f"[IA] Dictamen de recuperación persistido en 02_RESUMEN_DIARIO_IA: {nombre_reporte}")
+
+    except Exception as e:
+        error_msg = f"Fallo crítico en pipeline de análisis asíncrono: {str(e)}"
+        print(f"[ERROR] {error_msg}")
+        try:
+            timestamp_error = datetime.datetime.now().strftime('%H%M')
+            volcar_log_sistema(error_msg, f"CRASH_LOG_{timestamp_error}.txt")
+        except Exception as log_error:
+            print(f"[ERROR FATAL] Imposible escribir en conducto de logs: {log_error}")
+
+@app.post("/webhook/lyfta_workout")
+async def recibir_entreno_lyfta(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """
+    Edge Endpoint de Ingesta (Entrenamientos).
+    Recepción en tiempo real con latencia mínima. Retorna 200 OK inmediatamente.
+    """
+    content = await file.read()
+    csv_text = content.decode('utf-8')
+
+    background_tasks.add_task(pipeline_cognitivo_segundo_plano, csv_text)
+
+    return {
+        "status": "accepted",
+        "message": "Telemetría recibida. El ecosistema Google Health está procesando la correlación en segundo plano."
+    }
+
 @app.post("/webhook/full_telemetry")
 async def receive_telemetry(request: Request):
     """
-    INGESTA V15: Recibe datos de la Fitbit Air e inyecta el diagnóstico en tu Drive de 5TB.
-    Este archivo es el que yo (Gemini) leeré para actuar como tu entrenador de élite.
+    INGESTA V15: Recibe datos de la Fitbit Air (sueño, VFC, temp).
     """
     try:
         payload = await request.json()
@@ -68,16 +119,17 @@ async def receive_telemetry(request: Request):
             ]
         }
 
-        # Enrutamiento al Data Lake (Carpeta del día exacto)
-        nombre_reporte = f"DIAGNOSTICO_V15_{datetime.date.today()}.json"
-        file_id = volcar_json_diario(report, nombre_reporte)
+        # Enrutamiento al Data Lake (Inyecta directamente en 02_RESUMEN_DIARIO_IA)
+        nombre_reporte = f"DIAGNOSTICO_BIOMETRIA_{datetime.datetime.now().strftime('%H%M')}.json"
+        file_id = volcar_json_ia(report, nombre_reporte)
 
-        print(f"[NUBE V15] Reporte diario inyectado con éxito. ID en Drive: {file_id}")
+        print(f"[NUBE V15] Reporte biométrico inyectado con éxito. ID en Drive: {file_id}")
         return {"status": "success", "report_id": file_id, "analysis": analysis["status"]}
 
     except Exception as e:
-        print(f"[ERROR CRÍTICO V15] Fallo en la inyección de telemetría: {e}")
-        return {"status": "error", "message": str(e)}
+        error_msg = f"Fallo en la inyección de telemetría biométrica: {str(e)}"
+        print(f"[ERROR CRÍTICO V15] {error_msg}")
+        return {"status": "error", "message": error_msg}
 
 @app.post("/cron/diario")
 async def daily_sync():
@@ -97,11 +149,11 @@ async def inject_creatine():
 
 @app.on_event("startup")
 async def startup():
-    """Autodiagnóstico del contenedor al arrancar en Google Cloud."""
+    """Autodiagnóstico del contenedor al arrancar en Google Cloud Run."""
     try:
         estado = leer_estado_maestro(FILE_ID_MAESTRO)
         print("==================================================")
-        print("[SISTEMA] MOTOR V15 - ECOSISTEMA AUTÓNOMO ONLINE")
+        print("[SISTEMA] MOTOR V15 - GOOGLE HEALTH COACH ONLINE")
         print(f"[PERFIL] {estado['identidad']['genero']} | {estado['biometria_actual']['peso_kg']}kg")
         print(f"[MACROS] {estado['restricciones_duras']['proteina_g']}g Proteína | {estado['restricciones_duras']['calorias_objetivo']}kcal")
         print("==================================================")
