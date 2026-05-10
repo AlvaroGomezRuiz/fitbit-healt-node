@@ -34,15 +34,9 @@ def procesar_telemetria_nativa_api(payload):
 
     prompt_sistema = f"""
     System Context: You are the Google Health Premium Coach (V15 Core Engine).
-
-    Current Biological State:
-    {json.dumps(estado_maestro['biometria_actual'])}
-
-    Linear Memory Log:
-    {historial_mes}
-
-    New Telemetry (Fitbit Air):
-    {json.dumps(payload)}
+    Current Biological State: {json.dumps(estado_maestro['biometria_actual'])}
+    Linear Memory Log: {historial_mes}
+    New Telemetry (Fitbit Air): {json.dumps(payload)}
 
     Execution Requirements:
     Cross-reference the new telemetry with physical fatigue in Linear Memory.
@@ -59,63 +53,69 @@ def procesar_telemetria_nativa_api(payload):
 
     return diagnostico
 
-def procesar_entrenamiento_llm(csv_text, estado_maestro):
+def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
     """
-    ANALISTA BIOMECÁNICO V15: Disección por ejercicio y cómputo global.
-    Este motor procesa cada serie para compararla con el historial y emitir directivas.
+    ANALISTA BIOMECÁNICO V15: Disección por ejercicio y cómputo general.
+    Optimizado para interpretar texto crudo, PDFs extraídos o CSVs.
     """
-    modelo = genai.GenerativeModel('gemini-1.5-pro') # pyright: ignore[reportPrivateImportUsage]
+    modelo = genai.GenerativeModel('gemini-1.5-pro') # type: ignore
     historial_mes = descargar_memoria_lineal()
 
+    # Prompt ultra-específico para el manejo de TEXTO
     prompt_sistema = f"""
     System Context: You are a Senior Performance Analyst for Google Health Premium.
+    Input Format Detected: {formato.upper()}
 
-    Historical Context (Linear Memory):
+    HISTORICAL CONTEXT (Linear Memory):
     {historial_mes}
 
-    New Training Data (Lyfta CSV):
-    {csv_text}
+    USER MASTER STATE:
+    {json.dumps(estado_maestro['biometria_actual'])}
 
-    Task:
-    1. Parse EVERY exercise in the CSV.
-    2. For each exercise: Compare weight/reps/tonnage with the historical log provided.
-    3. Determine if there was a PR (Personal Record), improvement, or stagnation for that specific movement.
-    4. Provide a technical analysis and a recovery directive for that specific muscle group.
-    5. After analyzing all exercises, provide a "Computo General" of the session.
+    RAW TRAINING DATA:
+    {raw_text}
 
-    LANGUAGE: Output all text values in Technical Spanish.
+    TASK:
+    1. Parse the {formato} data. If it's unstructured text, find exercises, sets, reps, and weight.
+    2. Compare each exercise with the Historical Context to detect PRs (Personal Records) or improvements.
+    3. Calculate tonnage per exercise and total.
+    4. Detect Set Type (Top Set, Back-off, etc.) from the text descriptions.
+    5. Provide a technical analysis and recovery directive for every specific exercise.
 
-    Output Format (Valid JSON ONLY):
+    OUTPUT FORMAT (Valid JSON ONLY):
     {{
         "ejercicios": [
             {{
-                "nombre": "<nombre del ejercicio>",
+                "nombre": "<string>",
                 "volumen_kg": <int>,
-                "status": "MEJORA/ESTANCAMIENTO/PR",
-                "analisis": "<analisis tecnico especifico>",
-                "directiva": "<accion inmediata para este grupo muscular>"
+                "status": "PR / MEJORA / ESTANCAMIENTO",
+                "analisis": "<string en español>",
+                "directiva": "<string en español>"
             }}
         ],
         "computo_general": {{
             "tonelaje_total": <int>,
-            "diagnostico_global": "<estado del SNC y fatiga acumulada>",
-            "directiva_maestra": "<ajuste nutricional o de descanso para hoy>"
+            "diagnostico_global": "<análisis del SNC y fatiga en español>",
+            "directiva_maestra": "<acción suplementaria o descanso en español>"
         }}
     }}
     """
 
-    print("[IA] Iniciando disección detallada por ejercicio...")
+    print(f"[IA] Iniciando disección biomecánica (Formato: {formato})...")
     respuesta = modelo.generate_content(prompt_sistema)
 
-    # Limpieza y carga de JSON
+    # Extracción blindada del JSON
     json_crudo = respuesta.text.replace("```json", "").replace("```", "").strip()
-    res = json.loads(json_crudo)
+    try:
+        res = json.loads(json_crudo)
+    except Exception as e:
+        print(f"[ERROR JSON] Fallo al parsear respuesta de IA: {e}")
+        return None
 
-    # --- CONSTRUCCIÓN DEL LOG HIPER-ESPECÍFICO ---
+    # Construcción del Log en Drive (Formato Hiper-Específico)
     timestamp = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-    log_final = f"\n### [ {timestamp} ] REPORTE DE SESIÓN LYFTA\n"
+    log_final = f"\n### [ {timestamp} ] REPORTE DE SESIÓN ({formato.upper()})\n"
 
-    # Iteramos por cada ejercicio para crear el desglose que pides
     for ex in res['ejercicios']:
         log_final += (
             f"--- EJERCICIO: {ex['nombre'].upper()} ---\n"
@@ -124,7 +124,6 @@ def procesar_entrenamiento_llm(csv_text, estado_maestro):
             f"Directiva: {ex['directiva']}\n\n"
         )
 
-    # Añadimos el cómputo general al final
     log_final += (
         f"== CÓMPUTO GENERAL DE LA SESIÓN ==\n"
         f"Tonelaje Total: {res['computo_general']['tonelaje_total']}kg\n"
@@ -133,14 +132,12 @@ def procesar_entrenamiento_llm(csv_text, estado_maestro):
         f"-------------------------------------------\n"
     )
 
-    # Persistencia en la Memoria Lineal de Drive
     actualizar_memoria_lineal(log_final)
-
     return res
-    
+
 def sincronizar_biometria_fit():
     """
-    Fallback alostático vía PULL. Muta el Gemelo Digital.
+    Sincronización de peso y macros (Gemelo Digital).
     """
     try:
         estado = leer_estado_maestro(FILE_ID_MAESTRO)
@@ -149,15 +146,9 @@ def sincronizar_biometria_fit():
         edad_actual = int(estado["identidad"]["edad"])
 
         token_env = os.environ.get("GOOGLE_OAUTH_TOKEN_JSON")
-        if token_env:
-            creds = Credentials.from_authorized_user_info(json.loads(token_env))
-        else:
-            if not os.path.exists(TOKEN_PATH):
-                raise FileNotFoundError(f"Falta {TOKEN_PATH} para ejecución local.")
-            creds = Credentials.from_authorized_user_file(TOKEN_PATH)
+        creds = Credentials.from_authorized_user_info(json.loads(token_env)) if token_env else Credentials.from_authorized_user_file(TOKEN_PATH)
 
         fitness_service = build('fitness', 'v1', credentials=creds)
-
         end_time = int(time.time() * 1000)
         start_time = end_time - 86400000
 
@@ -171,44 +162,28 @@ def sincronizar_biometria_fit():
         response = fitness_service.users().dataset().aggregate(userId='me', body=body).execute()
 
         nuevo_peso, nueva_altura = peso_actual, altura_actual
-        mutacion_requerida = False
+        mutacion = False
 
         for bucket in response.get('bucket', []):
             for dataset in bucket.get('dataset', []):
                 for point in dataset.get('point', []):
                     val = point.get('value', [])[0].get('fpVal')
                     if not val: continue
-                    source = dataset.get('dataSourceId', '').lower()
-
-                    if 'weight' in source and round(val, 1) != round(peso_actual, 1):
+                    if 'weight' in dataset.get('dataSourceId', '').lower() and round(val, 1) != round(peso_actual, 1):
                         nuevo_peso = round(val, 1)
-                        mutacion_requerida = True
-                    elif 'height' in source:
-                        altura_cm = val * 100 if val < 3.0 else val
-                        if round(altura_cm, 1) != round(altura_actual, 1):
-                            nueva_altura = round(altura_cm, 1)
-                            mutacion_requerida = True
+                        mutacion = True
+                    elif 'height' in dataset.get('dataSourceId', '').lower():
+                        nueva_altura = round(val * 100 if val < 3.0 else val, 1)
+                        mutacion = True
 
-        if mutacion_requerida:
-            nueva_proteina = int(nuevo_peso * 2.2)
-            nuevo_bmr = recalcular_bmr(nuevo_peso, nueva_altura, edad_actual)
-            nuevo_deficit = int(nuevo_bmr - 400)
-
+        if mutacion:
             estado["biometria_actual"]["peso_kg"] = nuevo_peso
             estado["biometria_actual"]["altura_cm"] = nueva_altura
-            estado["restricciones_duras"]["proteina_g"] = nueva_proteina
-            estado["restricciones_duras"]["calorias_objetivo"] = nuevo_deficit
-
+            estado["restricciones_duras"]["calorias_objetivo"] = int(recalcular_bmr(nuevo_peso, nueva_altura, edad_actual) - 400)
             actualizar_estado_maestro(FILE_ID_MAESTRO, estado)
-
-            log_alostasis = f"[ALOSTASIS] Gemelo Digital mutado. Nuevo Peso: {nuevo_peso}kg. Nuevo Déficit: {nuevo_deficit}kcal."
-            actualizar_memoria_lineal(log_alostasis)
-
-            print(f"[MUTACIÓN ALOSTÁTICA] Déficit: {nuevo_deficit}kcal | Proteína: {nueva_proteina}g")
+            actualizar_memoria_lineal(f"[ALOSTASIS] Gemelo Digital actualizado. Nuevo Peso: {nuevo_peso}kg.")
             return True
-
         return False
-
     except Exception as e:
-        print(f"[ERROR DE EXTRACCIÓN FIT] {e}")
+        print(f"[ERROR FIT] {e}")
         return False
