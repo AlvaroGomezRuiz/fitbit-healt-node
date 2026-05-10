@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 
 import google.generativeai as genai
-# Bypass arquitectónico para Pylance/Pyright: Importación directa silenciada
+# Bypass arquitectónico para Pylance/Pyright
 from google.generativeai import GenerativeModel # type: ignore
 
 from google.oauth2.credentials import Credentials
@@ -14,7 +14,8 @@ from drive_engine import (
     leer_estado_maestro,
     actualizar_estado_maestro,
     descargar_memoria_lineal,
-    actualizar_memoria_lineal
+    actualizar_memoria_lineal,
+    volcar_log_sistema
 )
 
 # CONFIGURACIÓN DE SEGURIDAD
@@ -30,7 +31,8 @@ Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH
 
 def extraer_metadatos_entreno(texto_crudo):
     """Identifica Fecha y Tipo de Rutina con Telemetría Activa."""
-    modelo = GenerativeModel('gemini-1.5-flash')
+    # Corrección de Endpoint: Uso de alias explícito
+    modelo = GenerativeModel('gemini-1.5-flash-latest')
 
     prompt = f"""
     Analiza este texto y extrae la fecha y el tipo de rutina.
@@ -46,8 +48,6 @@ def extraer_metadatos_entreno(texto_crudo):
     try:
         res = modelo.generate_content(prompt)
         clean_json = res.text.replace("```json", "").replace("```", "").strip()
-
-        # Intentamos parsear el JSON
         data = json.loads(clean_json)
 
         fecha_str = data.get('fecha', 'TODAY')
@@ -55,22 +55,14 @@ def extraer_metadatos_entreno(texto_crudo):
         return fecha_dt, data.get('tipo', 'ENTRENO').upper()
 
     except Exception as e:
-        # INYECCIÓN DE TELEMETRÍA: Forzamos el log a Drive
-        from drive_engine import volcar_log_sistema
-        mensaje_error = f"ERROR CRÍTICO EN IA METADATOS:\nExcepción: {str(e)}\n\n"
-
-        # Si el error es al procesar el texto de la IA, lo capturamos también
-        try:
-            mensaje_error += f"Respuesta cruda de la IA: {res.text}"
-        except:
-            mensaje_error += "No se recibió respuesta de la IA."
-
+        mensaje_error = f"ERROR CRÍTICO EN IA METADATOS:\nExcepción: {str(e)}\n"
         volcar_log_sistema(mensaje_error, f"DEBUG_IA_METADATOS_{datetime.now().strftime('%H%M%S')}.txt")
         return datetime.now(), "ENTRENO"
 
 def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
     """Analiza la sesión y actualiza el historial."""
-    modelo = GenerativeModel('gemini-1.5-flash')
+    # Corrección de Endpoint: Uso de alias explícito
+    modelo = GenerativeModel('gemini-1.5-flash-latest')
     historial_mes = descargar_memoria_lineal()
 
     prompt = f"""
@@ -93,13 +85,14 @@ def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
         actualizar_memoria_lineal(log_final)
         return res
     except Exception as e:
-        print(f"[ERROR IA ANÁLISIS] {e}")
+        volcar_log_sistema(f"ERROR IA ANÁLISIS: {str(e)}", f"DEBUG_IA_ANALISIS_{datetime.now().strftime('%H%M%S')}.txt")
         return {"error": str(e)}
 
 def procesar_telemetria_nativa_api(payload):
     """Procesamiento de datos de Fitbit."""
     historial_mes = descargar_memoria_lineal()
-    modelo = GenerativeModel('gemini-1.5-flash')
+    # Corrección de Endpoint: Uso de alias explícito
+    modelo = GenerativeModel('gemini-1.5-flash-latest')
     try:
         res = modelo.generate_content(f"Telemetría: {json.dumps(payload)}. Contexto: {historial_mes}")
         actualizar_memoria_lineal(f"[FITBIT] {res.text.strip()}")
