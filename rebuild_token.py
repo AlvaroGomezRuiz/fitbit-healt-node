@@ -1,49 +1,63 @@
 import os
 import sys
+import json
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# SCOPES V15: Cobertura total de la API de Google Fitness y Drive.
-# Requisito estricto para análisis de VFC, SpO2 y persistencia en Data Lake.
+# SCOPES V15: Cobertura total para Biometría Avanzada e Infraestructura.
+# Estos permisos permiten analizar VFC, SpO2 y gestionar tu Data Lake en Drive.
 SCOPES = [
     'https://www.googleapis.com/auth/fitness.sleep.read',
     'https://www.googleapis.com/auth/fitness.body.read',
     'https://www.googleapis.com/auth/fitness.activity.read',
     'https://www.googleapis.com/auth/fitness.activity.write',
-    'https://www.googleapis.com/auth/fitness.heart_rate.read',       # Nivel V15: Variabilidad Cardiaca
-    'https://www.googleapis.com/auth/fitness.oxygen_saturation.read',# Nivel V15: SpO2
-    'https://www.googleapis.com/auth/drive'                          # Nivel V15: Lectura/Escritura Absoluta
+    'https://www.googleapis.com/auth/fitness.heart_rate.read',       # VFC (Variabilidad Cardíaca)
+    'https://www.googleapis.com/auth/fitness.oxygen_saturation.read',# SpO2 (Oxígeno)
+    'https://www.googleapis.com/auth/drive'                          # Control de Carpetas y Archivos
 ]
 
 CREDENTIALS_FILE = 'credenciales_oauth.json'
 TOKEN_FILE = 'token.json'
 
 def generar_llave():
+    """
+    Protocolo de autorización OAuth 2.0.
+    Ejecuta esto en local para obtener el token que luego subirás a Cloud Run.
+    """
     print("==================================================")
-    print("[SISTEMA] Iniciando protocolo de autorización OAuth 2.0 (V15)...")
+    print("[SISTEMA] INICIANDO PROTOCOLO DE AUTORIZACIÓN V15")
     print("==================================================")
 
     if not os.path.exists(CREDENTIALS_FILE):
-        print(f"[ERROR CRÍTICO] Archivo maestro ausente: {CREDENTIALS_FILE}.")
-        print("[ACCIÓN] Descarga el cliente OAuth desde Google Cloud Console e insértalo en la raíz.")
+        print(f"[ERROR CRÍTICO] No se encuentra '{CREDENTIALS_FILE}'.")
+        print("[AYUDA] Descarga el JSON de 'ID de cliente de OAuth 2.0' desde Google Cloud Console.")
         sys.exit(1)
 
     try:
+        # Iniciamos el flujo de autorización
         flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+
+        # Abrimos el navegador en el puerto 8080
         creds = flow.run_local_server(
             port=8080,
-            success_message="[V15 OK] Autorización biométrica y de infraestructura completada. Cierra esta ventana."
+            success_message="[V15 OK] Autorización completada con éxito. Ya puedes cerrar esta pestaña."
         )
 
+        # Guardamos el token resultante
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
 
         print("\n==================================================")
-        print(f"[ÉXITO] {TOKEN_FILE} REGENERADO.")
-        print("[INFO] El payload contiene el Refresh Token. Listo para inyección en variables de entorno.")
+        print(f"[ÉXITO] ARCHIVO '{TOKEN_FILE}' GENERADO.")
+        print("--------------------------------------------------")
+        print("INSTRUCCIONES FINALES:")
+        print("1. Abre el archivo 'token.json' y copia TODO su contenido.")
+        print("2. Ve a la consola de Google Cloud Run.")
+        print("3. Pega el contenido en la variable de entorno: GOOGLE_OAUTH_TOKEN_JSON")
+        print("4. Despliega la nueva revisión.")
         print("==================================================")
 
     except Exception as e:
-        print(f"\n[FALLO DE INFRAESTRUCTURA] Colapso en el puente de seguridad: {e}")
+        print(f"\n[FALLO] Error en el puente de seguridad: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
