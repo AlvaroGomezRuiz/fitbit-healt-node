@@ -25,7 +25,7 @@ def ejecutar_peticion_rest(prompt):
         volcar_log_sistema("ERROR FATAL: La variable GEMINI_API_KEY no existe en Cloud Run.", f"ERR_API_{datetime.now().strftime('%H%M%S')}.txt")
         return None
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.1}
