@@ -8,8 +8,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# Importación de tu motor de auto-mutación
-from brain_engine import procesar_bitacora_y_mutar
+# Importación del nuevo motor de extracción (Pull)
+from brain_engine import sincronizar_biometria_fit
 
 # 1. CARGA DE BIOMETRÍA Y CONSTANTES (HARD CONSTRAINTS)
 load_dotenv("/app/.env" if os.path.exists("/app/.env") else ".env")
@@ -17,7 +17,7 @@ load_dotenv("/app/.env" if os.path.exists("/app/.env") else ".env")
 TOKEN_PATH = "./token.json"
 CREDENTIALS_PATH = os.getenv("GOOGLE_CREDENTIALS_PATH", "./credenciales_oauth.json")
 
-# Parámetros biométricos dinámicos (Álvaro, 19 años, 160cm)
+# Parámetros biométricos dinámicos
 WEIGHT = float(os.getenv("WEIGHT_KG", 82))
 CREATINA = int(os.getenv("CREATINA_DAILY_DOSE_GRAMS", 7))
 PROTEINA = int(os.getenv("PROTEIN_DAILY_DOSE_GRAMS", 180))
@@ -114,24 +114,16 @@ async def receive_telemetry(request: Request):
     save_to_cloud(report)
     return report
 
-@app.post("/webhook/voice")
-async def voice_input(request: Request):
-    """Ingesta de telemetría por voz para auto-mutación del sistema."""
-    payload = await request.json()
-    transcripcion = payload.get("transcripcion", "")
-
-    if transcripcion:
-        procesar_bitacora_y_mutar(transcripcion)
-        return {"status": "success", "message": "Procesamiento de voz ejecutado."}
-    raise HTTPException(status_code=400, detail="Payload vacío")
-
 @app.post("/cron/creatina")
 async def inject_creatine():
     """Ejecución programada (Cloud Scheduler) a las 08:00 AM."""
     now = datetime.datetime.utcnow()
     print(f"[CRON] Registrando {CREATINA}g de Creatina a las {now.isoformat()}Z")
-    # El registro en Google Fitness requerirá el ID del DataSource tras el día 26
-    return {"status": "success", "compound": "Creatina", "dose": CREATINA}
+
+    # Extracción y auto-mutación silenciosa
+    sincronizar_biometria_fit()
+
+    return {"status": "success", "compound": "Creatina", "dose": CREATINA, "sync": "Biometría evaluada"}
 
 # 5. ARRANQUE DEL SERVIDOR
 @app.on_event("startup")

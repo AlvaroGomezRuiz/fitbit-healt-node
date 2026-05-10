@@ -1,34 +1,65 @@
 import os
-import re
+import time
 from dotenv import set_key, load_dotenv
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
-# Detección dinámica: '/app/.env' en la nube, '.env' en tu PC
+# Detección dinámica de entorno
 ENV_PATH = "/app/.env" if os.path.exists("/app/.env") else ".env"
+TOKEN_PATH = "token.json"
 
 def recalcular_bmr(peso, altura, edad):
-    # Ecuación de Mifflin-St Jeor anclada al perfil de hipertrofia
+    # Ecuación de Mifflin-St Jeor anclada al perfil de hipertrofia (160cm, 19 años)
     return (10 * peso) + (6.25 * altura) - (5 * edad) + 5
 
-def procesar_bitacora_y_mutar(texto_crudo):
-    if not os.path.exists(ENV_PATH):
-        print(f"[ERROR CRÍTICO] Archivo de entorno inaccesible en {ENV_PATH}")
+def sincronizar_biometria_fit():
+    """
+    Extracción (Pull) directa desde Google Fitness API.
+    Si el Asistente de Fitbit registró un nuevo peso, el nodo se recalibra solo.
+    """
+    if not os.path.exists(ENV_PATH) or not os.path.exists(TOKEN_PATH):
+        print(f"[ERROR CRÍTICO] Falta archivo .env o token.json. Abortando sincronización.")
         return False
 
     load_dotenv(ENV_PATH)
+    peso_actual_env = float(os.getenv("WEIGHT_KG", 82))
 
-    # Expresión regular robusta: Captura decimales y múltiples sintaxis
-    match_peso = re.search(r'(?:peso|bajado a|subido a|estoy en)\s*(\d{2,3}(?:[.,]\d{1,2})?)', texto_crudo.lower())
+    try:
+        # 1. Autorización de lectura en Google Fit
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH)
+        fitness_service = build('fitness', 'v1', credentials=creds)
 
-    if match_peso:
-        try:
-            # Normalización de coma a punto para conversión matemática
-            nuevo_peso = float(match_peso.group(1).replace(',', '.'))
+        # 2. Ventana de extracción: Últimas 24 horas (en milisegundos)
+        end_time = int(time.time() * 1000)
+        start_time = end_time - 86400000
+
+        # Petición de agregación de la métrica 'com.google.weight'
+        body = {
+            "aggregateBy": [{"dataTypeName": "com.google.weight"}],
+            "bucketByTime": {"durationMillis": 86400000},
+            "startTimeMillis": start_time,
+            "endTimeMillis": end_time
+        }
+
+        response = fitness_service.users().dataset().aggregate(userId='me', body=body).execute()
+
+        # 3. Minería del payload de respuesta
+        nuevo_peso = None
+        for bucket in response.get('bucket', []):
+            for dataset in bucket.get('dataset', []):
+                for point in dataset.get('point', []):
+                    for value in point.get('value', []):
+                        nuevo_peso = value.get('fpVal')
+
+        # 4. Lógica de Mutación y Blindaje
+        if nuevo_peso and round(nuevo_peso, 1) != round(peso_actual_env, 1):
+            nuevo_peso = round(nuevo_peso, 1)
 
             # Recálculo exacto (preservación en déficit)
             nueva_proteina = int(nuevo_peso * 2.2)
             nuevo_bmr = recalcular_bmr(nuevo_peso, 160, 19)
 
-            # Mutación de variables de estado
+            # Mutación física de variables
             set_key(ENV_PATH, "WEIGHT_KG", str(nuevo_peso))
             set_key(ENV_PATH, "PROTEIN_DAILY_DOSE_GRAMS", str(nueva_proteina))
             set_key(ENV_PATH, "CALORIC_TARGET_DEFICIT", str(int(nuevo_bmr - 400)))
@@ -38,13 +69,12 @@ def procesar_bitacora_y_mutar(texto_crudo):
             set_key(ENV_PATH, "BAN_MAGNESIO", "True")
             set_key(ENV_PATH, "BAN_OMEGA3", "True")
 
-            # Salida estándar interceptada automáticamente por Google Cloud Logging
-            print(f"[MUTACIÓN EJECUTADA] Biometría actualizada: Peso {nuevo_peso}kg | Proteína {nueva_proteina}g | Déficit {int(nuevo_bmr - 400)}kcal")
+            print(f"[MUTACIÓN AUTÓNOMA] API Fit detectó cambio. Nuevo Peso: {nuevo_peso}kg | Proteína: {nueva_proteina}g | Déficit: {int(nuevo_bmr - 400)}kcal")
             return True
-
-        except Exception as e:
-            print(f"[ERROR DE MUTACIÓN] Fallo estructural al sobreescribir variables: {e}")
+        else:
+            print("[INFO] Biometría estable. No hay divergencia entre Google Fit y el Nodo de 5TB.")
             return False
-    else:
-        print("[INFO] No se detectaron comandos de mutación en la telemetría de voz.")
+
+    except Exception as e:
+        print(f"[ERROR DE EXTRACCIÓN] Fallo al leer API de Google Fit: {e}")
         return False
