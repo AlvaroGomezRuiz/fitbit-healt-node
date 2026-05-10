@@ -8,16 +8,17 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# Importación del nuevo motor de extracción (Pull)
+# Importación del nuevo motor de extracción multidimensional (Pull)
 from brain_engine import sincronizar_biometria_fit
 
 # 1. CARGA DE BIOMETRÍA Y CONSTANTES (HARD CONSTRAINTS)
-load_dotenv("/app/.env" if os.path.exists("/app/.env") else ".env")
+ENV_PATH = "/app/.env" if os.path.exists("/app/.env") else ".env"
+load_dotenv(ENV_PATH)
 
 TOKEN_PATH = "./token.json"
 CREDENTIALS_PATH = os.getenv("GOOGLE_CREDENTIALS_PATH", "./credenciales_oauth.json")
 
-# Parámetros biométricos dinámicos
+# Parámetros biométricos base en memoria
 WEIGHT = float(os.getenv("WEIGHT_KG", 82))
 CREATINA = int(os.getenv("CREATINA_DAILY_DOSE_GRAMS", 7))
 PROTEINA = int(os.getenv("PROTEIN_DAILY_DOSE_GRAMS", 180))
@@ -120,7 +121,7 @@ async def inject_creatine():
     now = datetime.datetime.utcnow()
     print(f"[CRON] Registrando {CREATINA}g de Creatina a las {now.isoformat()}Z")
 
-    # Extracción y auto-mutación silenciosa
+    # Extracción multidimensional y auto-mutación silenciosa
     sincronizar_biometria_fit()
 
     return {"status": "success", "compound": "Creatina", "dose": CREATINA, "sync": "Biometría evaluada"}
@@ -129,9 +130,19 @@ async def inject_creatine():
 @app.on_event("startup")
 async def startup():
     audit_security_logs()
+
+    # Recarga dinámica para lectura de logs de inicio precisos
+    load_dotenv(ENV_PATH, override=True)
+    peso_inicio = os.getenv("WEIGHT_KG", 82)
+    altura_inicio = os.getenv("HEIGHT_CM", 160)
+    edad_inicio = os.getenv("YEARS", 19)
+    creatina_inicio = os.getenv("CREATINA_DAILY_DOSE_GRAMS", 7)
+    proteina_inicio = os.getenv("PROTEIN_DAILY_DOSE_GRAMS", 180)
+
     print("==================================================")
-    print("[SISTEMA] MOTOR V12 - NODO AUTÓNOMO INICIALIZADO")
-    print(f"[PERFIL] {WEIGHT}kg | {CREATINA}g Creatina | {PROTEINA}g Proteína")
+    print("[SISTEMA] MOTOR V14 - COACH DE ÉLITE INICIALIZADO")
+    print(f"[PERFIL] {edad_inicio} años | {altura_inicio}cm | {peso_inicio}kg")
+    print(f"[MACROS] {creatina_inicio}g Creatina | {proteina_inicio}g Proteína")
     print(f"[PROTOCOLO HOY] {get_daily_hydration()}")
     print("==================================================")
 

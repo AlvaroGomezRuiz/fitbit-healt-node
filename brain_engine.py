@@ -4,38 +4,43 @@ from dotenv import set_key, load_dotenv
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-# Detección dinámica de entorno
 ENV_PATH = "/app/.env" if os.path.exists("/app/.env") else ".env"
 TOKEN_PATH = "token.json"
 
 def recalcular_bmr(peso, altura, edad):
-    # Ecuación de Mifflin-St Jeor anclada al perfil de hipertrofia (160cm, 19 años)
+    # Ecuación de Mifflin-St Jeor con variables 100% dinámicas
     return (10 * peso) + (6.25 * altura) - (5 * edad) + 5
 
 def sincronizar_biometria_fit():
     """
-    Extracción (Pull) directa desde Google Fitness API.
-    Si el Asistente de Fitbit registró un nuevo peso, el nodo se recalibra solo.
+    Extracción Multidimensional (Pull).
+    El sistema audita la API central. Si detecta divergencias en la masa o estatura,
+    ejecuta una mutación del entorno y recalcula la síntesis proteica requerida.
     """
     if not os.path.exists(ENV_PATH) or not os.path.exists(TOKEN_PATH):
-        print(f"[ERROR CRÍTICO] Falta archivo .env o token.json. Abortando sincronización.")
+        print(f"[ERROR CRÍTICO] Archivos de entorno inaccesibles.")
         return False
 
     load_dotenv(ENV_PATH)
-    peso_actual_env = float(os.getenv("WEIGHT_KG", 82))
+
+    # Lectura del estado biológico actual
+    peso_actual = float(os.getenv("WEIGHT_KG", 82))
+    altura_actual = float(os.getenv("HEIGHT_CM", 160))
+    edad_actual = int(os.getenv("YEARS", 19))
 
     try:
-        # 1. Autorización de lectura en Google Fit
         creds = Credentials.from_authorized_user_file(TOKEN_PATH)
         fitness_service = build('fitness', 'v1', credentials=creds)
 
-        # 2. Ventana de extracción: Últimas 24 horas (en milisegundos)
         end_time = int(time.time() * 1000)
-        start_time = end_time - 86400000
+        start_time = end_time - 86400000 # Ventana de 24 horas
 
-        # Petición de agregación de la métrica 'com.google.weight'
+        # Petición de métricas combinadas (Peso y Altura)
         body = {
-            "aggregateBy": [{"dataTypeName": "com.google.weight"}],
+            "aggregateBy": [
+                {"dataTypeName": "com.google.weight"},
+                {"dataTypeName": "com.google.height"}
+            ],
             "bucketByTime": {"durationMillis": 86400000},
             "startTimeMillis": start_time,
             "endTimeMillis": end_time
@@ -43,38 +48,52 @@ def sincronizar_biometria_fit():
 
         response = fitness_service.users().dataset().aggregate(userId='me', body=body).execute()
 
-        # 3. Minería del payload de respuesta
-        nuevo_peso = None
+        nuevo_peso = peso_actual
+        nueva_altura = altura_actual
+        mutacion_requerida = False
+
+        # Minería de orígenes de datos
         for bucket in response.get('bucket', []):
             for dataset in bucket.get('dataset', []):
                 for point in dataset.get('point', []):
-                    for value in point.get('value', []):
-                        nuevo_peso = value.get('fpVal')
+                    val = point.get('value', [])[0].get('fpVal')
+                    if not val:
+                        continue
 
-        # 4. Lógica de Mutación y Blindaje
-        if nuevo_peso and round(nuevo_peso, 1) != round(peso_actual_env, 1):
-            nuevo_peso = round(nuevo_peso, 1)
+                    source = dataset.get('dataSourceId', '').lower()
 
-            # Recálculo exacto (preservación en déficit)
+                    if 'weight' in source and round(val, 1) != round(peso_actual, 1):
+                        nuevo_peso = round(val, 1)
+                        mutacion_requerida = True
+                    elif 'height' in source:
+                        altura_cm = val * 100 if val < 3.0 else val
+                        if round(altura_cm, 1) != round(altura_actual, 1):
+                            nueva_altura = round(altura_cm, 1)
+                            mutacion_requerida = True
+
+        # Ejecución del recálculo orgánico
+        if mutacion_requerida:
             nueva_proteina = int(nuevo_peso * 2.2)
-            nuevo_bmr = recalcular_bmr(nuevo_peso, 160, 19)
+            nuevo_bmr = recalcular_bmr(nuevo_peso, nueva_altura, edad_actual)
+            nuevo_deficit = int(nuevo_bmr - 400) # Algoritmo de preservación magra
 
-            # Mutación física de variables
+            # Sobrescritura de estado en el nodo
             set_key(ENV_PATH, "WEIGHT_KG", str(nuevo_peso))
+            set_key(ENV_PATH, "HEIGHT_CM", str(nueva_altura))
             set_key(ENV_PATH, "PROTEIN_DAILY_DOSE_GRAMS", str(nueva_proteina))
-            set_key(ENV_PATH, "CALORIC_TARGET_DEFICIT", str(int(nuevo_bmr - 400)))
+            set_key(ENV_PATH, "CALORIC_TARGET_DEFICIT", str(nuevo_deficit))
 
-            # Blindaje de Hard Constraints (Innegociable)
+            # Aplicación de Hard Constraints (Inyección forzada)
             set_key(ENV_PATH, "CREATINA_DAILY_DOSE_GRAMS", "7")
             set_key(ENV_PATH, "BAN_MAGNESIO", "True")
             set_key(ENV_PATH, "BAN_OMEGA3", "True")
 
-            print(f"[MUTACIÓN AUTÓNOMA] API Fit detectó cambio. Nuevo Peso: {nuevo_peso}kg | Proteína: {nueva_proteina}g | Déficit: {int(nuevo_bmr - 400)}kcal")
+            print(f"[MUTACIÓN ALOSTÁTICA EJECUTADA] Parámetros: {nuevo_peso}kg | {nueva_altura}cm | {edad_actual} años.")
+            print(f"[NUEVO OBJETIVO] Déficit: {nuevo_deficit}kcal | Proteína: {nueva_proteina}g")
             return True
-        else:
-            print("[INFO] Biometría estable. No hay divergencia entre Google Fit y el Nodo de 5TB.")
-            return False
+
+        return False
 
     except Exception as e:
-        print(f"[ERROR DE EXTRACCIÓN] Fallo al leer API de Google Fit: {e}")
+        print(f"[ERROR DE EXTRACCIÓN] {e}")
         return False
