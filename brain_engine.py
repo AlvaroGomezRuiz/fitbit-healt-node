@@ -14,7 +14,7 @@ from drive_engine import (
     actualizar_memoria_lineal,
     volcar_log_sistema,
     obtener_servicio_drive,
-    resolver_ruta_diaria # <--- CORREGIDO: Importamos la nueva función de enrutamiento
+    resolver_ruta_diaria
 )
 
 # CONFIGURACIÓN MAESTRA
@@ -198,3 +198,32 @@ def procesar_telemetria_nativa_api(payload):
     if resultado:
         # Aquí no mandamos HTML porque son solo pings técnicos de la API, no te interesa leerlos visualmente.
         actualizar_memoria_lineal(f"[TELEMETRÍA] {resultado.strip()}")
+
+def evaluar_mutacion_estado(raw_text, estado_actual):
+    """
+    MOTOR DE AUTONOMÍA: Analiza el texto del entreno en busca de actualizaciones
+    biométricas explícitas y devuelve el JSON maestro mutado si hay cambios.
+    """
+    prompt = f"""
+    SYSTEM: Eres un analizador de datos biométricos estricto.
+    TAREA: Revisa el siguiente reporte de entrenamiento y el estado actual del atleta.
+    ENTRENO: {raw_text[:1000]}
+    ESTADO_ACTUAL: {json.dumps(estado_actual)}
+
+    REGLA 1: Si el usuario menciona explícitamente un nuevo peso corporal (ej. "Peso: 80", "peso en ayunas 80kg"), actualiza el campo 'peso_kg' dentro de 'biometria_actual'.
+    REGLA 2: Recalcula 'tendencia_peso_7dias' restando el nuevo peso al peso antiguo.
+    REGLA 3: Devuelve ÚNICA Y EXCLUSIVAMENTE el objeto JSON validado actualizado.
+    REGLA 4: NO uses bloques de código (```json). Devuelve el texto en bruto para que pueda ser parseado directamente. Si no hay cambios en el peso, devuelve el JSON original intacto.
+    """
+
+    res = ejecutar_peticion_rest(prompt, "gemini-3.1-flash-lite")
+
+    if not res: return estado_actual
+
+    try:
+        clean_json = res.replace("```json", "").replace("```", "").strip()
+        nuevo_estado = json.loads(clean_json)
+        return nuevo_estado
+    except Exception as e:
+        actualizar_memoria_lineal(f"[ALERTA AUTONOMÍA] Fallo al parsear JSON: {str(e)}")
+        return estado_actual
