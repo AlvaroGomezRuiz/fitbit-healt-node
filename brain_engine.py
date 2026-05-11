@@ -14,7 +14,7 @@ from drive_engine import (
     actualizar_memoria_lineal,
     volcar_log_sistema,
     obtener_servicio_drive,
-    resolver_ruta_inteligente
+    resolver_ruta_diaria # <--- CORREGIDO: Importamos la nueva función de enrutamiento
 )
 
 # CONFIGURACIÓN MAESTRA
@@ -47,19 +47,17 @@ def ejecutar_peticion_rest(prompt, modelo_preferido="gemini-3.1-pro-preview"):
     return None
 
 def salvar_reporte_en_drive(contenido_html, subcarpeta, prefijo):
-    """Guarda los informes convirtiendo automáticamente el HTML a Documento de Google Nativo."""
+    """Guarda los informes sueltos diarios en Google Docs Nativo."""
     try:
         drive_service = obtener_servicio_drive()
         ahora = obtener_ahora()
-        id_destino = resolver_ruta_inteligente(ahora, subcarpeta)
 
-        # OMITIMOS EXTENSIÓN. Drive le pondrá el icono de Documento azul automáticamente.
+        # Usamos la nueva ruta diaria (SALUD -> AÑO -> MES)
+        id_destino = resolver_ruta_diaria(ahora, subcarpeta)
+
         nombre_archivo = f"{prefijo}_{ahora.strftime('%d_%m_%Y')}"
-
-        # Le decimos a Drive que el contenido es HTML puro
         media = MediaIoBaseUpload(io.BytesIO(contenido_html.encode('utf-8')), mimetype='text/html')
 
-        # Magia: Le ordenamos a Drive que lo convierta a un Documento de Google App
         metadata = {
             'name': nombre_archivo,
             'parents': [id_destino],
@@ -73,7 +71,6 @@ def salvar_reporte_en_drive(contenido_html, subcarpeta, prefijo):
         return False
 
 # --- MOTOR FITBIT AIR: TELEMETRÍA SNC Y RECUPERACIÓN ---
-# (El código de extracción de la Fitbit Air se mantiene intacto, ya está optimizado)
 
 def extraer_telemetria_fitbit():
     """Descarga HRV, Sueño y SpO2 de las últimas 24h para evaluar fatiga del SNC."""
@@ -148,13 +145,13 @@ def generar_resumen_pre_entreno():
 
     report = ejecutar_peticion_rest(prompt, "gemini-3.1-pro-preview")
     if report:
-        # Quitamos la etiqueta ```html si la IA se despista y la pone
         clean_html = report.replace("```html", "").replace("```", "").strip()
 
-        # Memoria interna en texto plano
-        actualizar_memoria_lineal(f"[{ahora.isoformat()}] [READINESS] HRV: {telemetria_pulsera.get('hrv_promedio')}ms | Sueño: {telemetria_pulsera.get('sueño_horas')}h")
+        # MAGIA DE DOBLE ESCRITURA: Le pasamos el texto crudo a la IA y el HTML a tu Diario Acumulado
+        texto_crudo_ia = f"[{ahora.isoformat()}] [READINESS] HRV: {telemetria_pulsera.get('hrv_promedio')}ms | Sueño: {telemetria_pulsera.get('sueño_horas')}h"
+        actualizar_memoria_lineal(texto_crudo_ia, clean_html)
 
-        # Reporte para el usuario como Google Doc
+        # Guardamos también una copia diaria suelta en 02_RESUMEN_DIARIO_IA
         return salvar_reporte_en_drive(clean_html, "02_RESUMEN_DIARIO_IA", "PRE_ENTRENO")
     return False
 
@@ -187,8 +184,10 @@ def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
 
     clean_html = res.replace("```html", "").replace("```", "").strip()
 
-    # El log histórico se queda la versión cruda, Drive genera el Doc bonito
-    actualizar_memoria_lineal(f"\n--- REPORTE POST-ENTRENO ---\n[Guardado en formato nativo Docs]")
+    # MAGIA DE DOBLE ESCRITURA
+    texto_crudo_ia = f"\n--- REPORTE POST-ENTRENO ---\n[Guardado en formato nativo Docs]"
+    actualizar_memoria_lineal(texto_crudo_ia, clean_html)
+
     salvar_reporte_en_drive(clean_html, "02_RESUMEN_DIARIO_IA", f"POST_ENTRENO")
     return res
 
@@ -197,4 +196,5 @@ def procesar_telemetria_nativa_api(payload):
     prompt = f"Analyze health telemetry: {json.dumps(payload)}. Context: {historial_mes}. SPANISH. NO MARKDOWN, JUST PLAIN TEXT."
     resultado = ejecutar_peticion_rest(prompt, "gemini-3.1-flash-lite")
     if resultado:
+        # Aquí no mandamos HTML porque son solo pings técnicos de la API, no te interesa leerlos visualmente.
         actualizar_memoria_lineal(f"[TELEMETRÍA] {resultado.strip()}")
