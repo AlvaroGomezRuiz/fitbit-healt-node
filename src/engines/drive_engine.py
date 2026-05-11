@@ -6,8 +6,6 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
-# NOTA ARQUITECTÓNICA: TOKEN_PATH y FOLDER_SALUD_ID eliminados.
-# La infraestructura exige inyección vía variables de entorno en Cloud Run.
 
 MESES = {
     1: "01_ENERO", 2: "02_FEBRERO", 3: "03_MARZO", 4: "04_ABRIL",

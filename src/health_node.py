@@ -9,8 +9,7 @@ try:
 except ImportError:
     PdfReader = None
 
-# Importaciones desde el motor de inteligencia
-from brain_engine import (
+from engines.brain_engine import (
     procesar_entrenamiento_llm,
     procesar_telemetria_nativa_api,
     extraer_metadatos_entreno,
@@ -18,8 +17,7 @@ from brain_engine import (
     evaluar_mutacion_estado
 )
 
-# Importaciones desde el motor de persistencia
-from drive_engine import (
+from engines.drive_engine import (
     leer_estado_maestro,
     actualizar_estado_maestro,
     volcar_archivo_raw,

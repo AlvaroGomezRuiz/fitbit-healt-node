@@ -7,7 +7,6 @@ import pytz
 from google.oauth2.credentials import Credentials
 from googleapiclient.http import MediaIoBaseUpload
 
-# Importaciones del motor de persistencia
 from drive_engine import (
     leer_estado_maestro,
     descargar_memoria_lineal,
@@ -18,7 +17,6 @@ from drive_engine import (
 )
 
 # CONFIGURACIÓN MAESTRA
-# NOTA: FILE_ID_MAESTRO eliminado. Se extrae dinámicamente del entorno.
 RUTINA_MAESTRA = "Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH"
 ZONA_HORARIA = pytz.timezone("Europe/Madrid")
 
