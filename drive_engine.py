@@ -6,15 +6,20 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
-# CONFIGURACIÓN MAESTRA V15
+# CONFIGURACIÓN MAESTRA
 TOKEN_PATH = "token.json"
-# Identificador único de tu directorio raíz de Salud en Drive
 FOLDER_SALUD_ID = "1s2GSGjlxChGy39jUxJFDiijBCWKKg-T5"
 
 MESES = {
     1: "01_ENERO", 2: "02_FEBRERO", 3: "03_MARZO", 4: "04_ABRIL",
     5: "05_MAYO", 6: "06_JUNIO", 7: "07_JULIO", 8: "08_AGOSTO",
     9: "09_SEPTIEMBRE", 10: "10_OCTUBRE", 11: "11_NOVIEMBRE", 12: "12_DICIEMBRE"
+}
+
+NOMBRES_MESES = {
+    1: "ENERO", 2: "FEBRERO", 3: "MARZO", 4: "ABRIL",
+    5: "MAYO", 6: "JUNIO", 7: "JULIO", 8: "AGOSTO",
+    9: "SEPTIEMBRE", 10: "OCTUBRE", 11: "NOVIEMBRE", 12: "DICIEMBRE"
 }
 
 def obtener_servicio_drive():
@@ -62,15 +67,21 @@ def volcar_log_sistema(log_text: str, nombre_archivo: str, fecha_dt=None):
     """Registro persistente de telemetría y errores para depuración asíncrona."""
     if not fecha_dt: fecha_dt = datetime.now()
     drive_service = obtener_servicio_drive()
-    id_destino = resolver_ruta_inteligente(fecha_dt, "03_MOTOR_V15_LOGS")
+    id_destino = resolver_ruta_inteligente(fecha_dt, "03_MOTOR_LOGS")
     media = MediaIoBaseUpload(io.BytesIO(log_text.encode('utf-8')), mimetype='text/plain', resumable=True)
     drive_service.files().create(body={'name': nombre_archivo, 'parents': [id_destino]}, media_body=media).execute()
 
 def actualizar_memoria_lineal(nuevo_registro_texto):
-    """Mantiene el log histórico acumulativo en formato Markdown."""
+    """Mantiene el log histórico acumulativo en formato TXT dentro de la carpeta del mes."""
     drive_service = obtener_servicio_drive()
-    nombre_archivo = f"HISTORIAL_V15_{datetime.now().strftime('%Y_%m')}.md"
-    query = f"name='{nombre_archivo}' and '{FOLDER_SALUD_ID}' in parents and trashed=false"
+    ahora = datetime.now()
+
+    nombre_archivo = f"HISTORICO_{NOMBRES_MESES[ahora.month]}_{ahora.year}.txt"
+
+    id_anio = obtener_o_crear(str(ahora.year), FOLDER_SALUD_ID, drive_service)
+    id_mes = obtener_o_crear(MESES[ahora.month], id_anio, drive_service)
+
+    query = f"name='{nombre_archivo}' and '{id_mes}' in parents and trashed=false"
     res = drive_service.files().list(q=query, fields='files(id)').execute()
     archivos = res.get('files', [])
 
@@ -84,22 +95,29 @@ def actualizar_memoria_lineal(nuevo_registro_texto):
         while not done: _, done = downloader.next_chunk()
         historial_previo = fh.getvalue().decode('utf-8')
 
-    nuevo_contenido = historial_previo + f"\n[{datetime.now().isoformat()}] {nuevo_registro_texto}"
-    media = MediaIoBaseUpload(io.BytesIO(nuevo_contenido.encode('utf-8')), mimetype='text/markdown')
+    nuevo_contenido = historial_previo + f"\n[{ahora.isoformat()}] {nuevo_registro_texto}"
+    media = MediaIoBaseUpload(io.BytesIO(nuevo_contenido.encode('utf-8')), mimetype='text/plain')
 
     if file_id:
         drive_service.files().update(fileId=file_id, media_body=media).execute()
     else:
-        drive_service.files().create(body={'name': nombre_archivo, 'parents': [FOLDER_SALUD_ID]}, media_body=media).execute()
+        drive_service.files().create(body={'name': nombre_archivo, 'parents': [id_mes]}, media_body=media).execute()
 
 def descargar_memoria_lineal():
     """Recupera el historial completo del mes actual para inyección de contexto en la IA."""
     drive_service = obtener_servicio_drive()
-    nombre_archivo = f"HISTORIAL_V15_{datetime.now().strftime('%Y_%m')}.md"
-    query = f"name='{nombre_archivo}' and '{FOLDER_SALUD_ID}' in parents and trashed=false"
+    ahora = datetime.now()
+
+    nombre_archivo = f"HISTORICO_{NOMBRES_MESES[ahora.month]}_{ahora.year}.txt"
+
+    id_anio = obtener_o_crear(str(ahora.year), FOLDER_SALUD_ID, drive_service)
+    id_mes = obtener_o_crear(MESES[ahora.month], id_anio, drive_service)
+
+    query = f"name='{nombre_archivo}' and '{id_mes}' in parents and trashed=false"
     res = drive_service.files().list(q=query, fields='files(id)').execute()
     archivos = res.get('files', [])
     if not archivos: return "Sin historial."
+
     request = drive_service.files().get_media(fileId=archivos[0]['id'])
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)

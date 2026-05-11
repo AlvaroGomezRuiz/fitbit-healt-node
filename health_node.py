@@ -9,17 +9,17 @@ try:
 except ImportError:
     PdfReader = None
 
-# Importaciones desde tu motor de inteligencia
+# Importaciones desde el motor de inteligencia
 from brain_engine import (
     procesar_entrenamiento_llm,
     procesar_telemetria_nativa_api,
     sincronizar_biometria_fit,
     extraer_metadatos_entreno,
-    generar_resumen_pre_entreno,  # IMPORTACIÓN CRÍTICA PARA EL RESUMEN
+    generar_resumen_pre_entreno,
     FILE_ID_MAESTRO
 )
 
-# Importaciones desde tu motor de persistencia
+# Importaciones desde el motor de persistencia
 from drive_engine import (
     leer_estado_maestro,
     volcar_archivo_raw,
@@ -27,7 +27,7 @@ from drive_engine import (
     actualizar_memoria_lineal
 )
 
-app = FastAPI(title="Google Health Premium Node", version="15.6")
+app = FastAPI(title="Google Health Premium Node")
 
 def extraer_texto_pdf(file_content: bytes) -> str:
     """Extracción segura de vectores de texto en archivos PDF."""
@@ -78,7 +78,7 @@ async def recibir_telemetria(request: Request, background_tasks: BackgroundTasks
 async def endpoint_resumen_matutino(background_tasks: BackgroundTasks):
     """
     DISPARADOR MAESTRO DE LAS 08:50 AM.
-    Activa el análisis de preparación (Readiness) para el entreno de las 10:30 AM.
+    Activa el análisis de preparación (Readiness).
     """
     background_tasks.add_task(generar_resumen_pre_entreno)
     return {

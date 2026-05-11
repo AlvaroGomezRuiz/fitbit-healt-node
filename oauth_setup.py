@@ -2,7 +2,7 @@ import os
 import sys
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# SCOPES V15: Acceso total a salud y archivos.
+# SCOPES: Acceso total a salud y archivos.
 # Estos permisos son obligatorios para que el sistema pueda leer tu VFC,
 # tu SpO2 y organizar tus carpetas de entrenamiento en Drive.
 SCOPES = [
@@ -23,7 +23,7 @@ def generar_llave_maestra():
     Inicia el flujo de autorización OAuth 2.0.
     """
     print("==================================================")
-    print("[SISTEMA] INICIANDO PROTOCOLO DE ACCESO V15")
+    print("[SISTEMA] INICIANDO PROTOCOLO DE ACCESO")
     print("==================================================")
 
     if not os.path.exists(CREDENTIALS_FILE):
@@ -36,7 +36,7 @@ def generar_llave_maestra():
         flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
         creds = flow.run_local_server(
             port=8080,
-            success_message="[V15 OK] Acceso concedido. El puente de datos está activo. Cierra esta pestaña."
+            success_message="[OK] Acceso concedido. El puente de datos está activo. Cierra esta pestaña."
         )
 
         # Generamos el archivo token.json que usarás en la nube
