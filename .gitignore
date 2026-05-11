@@ -1,6 +1,7 @@
+.vscode/
 venv/
 __pycache__/
 *.log
-token.json
-credenciales_oauth.json
-API.md
+secrets/
+scripts/
+

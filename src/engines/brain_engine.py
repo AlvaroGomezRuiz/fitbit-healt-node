@@ -7,7 +7,7 @@ import pytz
 from google.oauth2.credentials import Credentials
 from googleapiclient.http import MediaIoBaseUpload
 
-# Importaciones del motor de persistencia (drive_engine.py)
+# Importaciones del motor de persistencia
 from drive_engine import (
     leer_estado_maestro,
     descargar_memoria_lineal,
@@ -18,7 +18,7 @@ from drive_engine import (
 )
 
 # CONFIGURACIÓN MAESTRA
-FILE_ID_MAESTRO = "1POEuCbmOEIURg7UycPsbIrH62uQvJgLI"
+# NOTA: FILE_ID_MAESTRO eliminado. Se extrae dinámicamente del entorno.
 RUTINA_MAESTRA = "Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH"
 ZONA_HORARIA = pytz.timezone("Europe/Madrid")
 
@@ -26,9 +26,11 @@ def obtener_ahora():
     return datetime.now(ZONA_HORARIA)
 
 def ejecutar_peticion_rest(prompt, modelo_preferido="gemini-3.1-pro-preview"):
-    """Motor de inferencia."""
+    """Motor de inferencia con fallback y trazabilidad estricta de errores."""
     api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key: return None
+    if not api_key:
+        volcar_log_sistema("[ERROR CRÍTICO] GEMINI_API_KEY no inyectada en el entorno.", "ERR_LLM.txt")
+        return None
 
     modelos = [modelo_preferido, "gemini-3.1-flash-lite", "gemini-1.5-flash"]
     modelos = list(dict.fromkeys(modelos))
@@ -41,9 +43,16 @@ def ejecutar_peticion_rest(prompt, modelo_preferido="gemini-3.1-pro-preview"):
         }
         try:
             resp = requests.post(url, json=payload, timeout=30)
-            if resp.status_code == 200:
-                return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        except: continue
+            resp.raise_for_status() # Fuerza excepción en errores HTTP 4xx/5xx
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except requests.exceptions.RequestException as e:
+            volcar_log_sistema(f"[WARN LLM] Red/Timeout con modelo {modelo}: {str(e)}", "WARN_LLM.txt")
+            continue
+        except KeyError as e:
+            volcar_log_sistema(f"[WARN LLM] Cambio de esquema en API Gemini {modelo}: {str(e)}", "WARN_LLM.txt")
+            continue
+
+    volcar_log_sistema("[ERROR CRÍTICO] Todos los modelos LLM del clúster fallaron.", "ERR_LLM.txt")
     return None
 
 def salvar_reporte_en_drive(contenido_html, subcarpeta, prefijo):
@@ -51,8 +60,6 @@ def salvar_reporte_en_drive(contenido_html, subcarpeta, prefijo):
     try:
         drive_service = obtener_servicio_drive()
         ahora = obtener_ahora()
-
-        # Usamos la nueva ruta diaria (SALUD -> AÑO -> MES)
         id_destino = resolver_ruta_diaria(ahora, subcarpeta)
 
         nombre_archivo = f"{prefijo}_{ahora.strftime('%d_%m_%Y')}"
@@ -73,9 +80,10 @@ def salvar_reporte_en_drive(contenido_html, subcarpeta, prefijo):
 # --- MOTOR FITBIT AIR: TELEMETRÍA SNC Y RECUPERACIÓN ---
 
 def extraer_telemetria_fitbit():
-    """Descarga HRV, Sueño y SpO2 de las últimas 24h para evaluar fatiga del SNC."""
+    """Descarga HRV, Sueño y SpO2 con gestión estricta de fallos."""
     token_env = os.environ.get("GOOGLE_OAUTH_TOKEN_JSON")
-    if not token_env: return None
+    if not token_env:
+        return None
 
     creds = Credentials.from_authorized_user_info(json.loads(token_env))
     headers = {'Authorization': f'Bearer {creds.token}'}
@@ -93,23 +101,29 @@ def extraer_telemetria_fitbit():
     # Sueño
     url_sleep = f"https://www.googleapis.com/fitness/v1/users/me/sessions?startTime={start_ms}&endTime={end_ms}"
     try:
-        res_sleep = requests.get(url_sleep, headers=headers).json()
-        if 'session' in res_sleep:
+        res_sleep = requests.get(url_sleep, headers=headers)
+        res_sleep.raise_for_status()
+        data_sleep = res_sleep.json()
+        if 'session' in data_sleep:
             minutos_sueno = sum([(int(s['endTimeMillis']) - int(s['startTimeMillis']))/60000
-                                 for s in res_sleep['session'] if s['activityType'] == 72])
+                                 for s in data_sleep['session'] if s['activityType'] == 72])
             telemetria["sueño_horas"] = round(minutos_sueno / 60, 2)
-    except: pass
+    except Exception as e:
+        volcar_log_sistema(f"[WARN FITBIT] Fallo al extraer API Sueño: {str(e)}", "WARN_FITBIT.txt")
 
     # HRV
     ds_id_hrv = f"{start_ns}-{end_ns}"
     url_hrv = f"https://www.googleapis.com/fitness/v1/users/me/dataSources/derived:com.google.heart_rate.variability:com.google.android.gms:merged/datasets/{ds_id_hrv}"
     try:
-        res_hrv = requests.get(url_hrv, headers=headers).json()
-        puntos = res_hrv.get('point', [])
+        res_hrv = requests.get(url_hrv, headers=headers)
+        res_hrv.raise_for_status()
+        data_hrv = res_hrv.json()
+        puntos = data_hrv.get('point', [])
         if puntos:
             valores = [p['value'][0]['fpVal'] for p in puntos if 'fpVal' in p['value'][0]]
             telemetria["hrv_promedio"] = round(sum(valores)/len(valores), 2) if valores else None
-    except: pass
+    except Exception as e:
+        volcar_log_sistema(f"[WARN FITBIT] Fallo al extraer API HRV: {str(e)}", "WARN_FITBIT.txt")
 
     return telemetria
 
@@ -117,7 +131,12 @@ def extraer_telemetria_fitbit():
 
 def generar_resumen_pre_entreno():
     """Briefing de Readiness."""
-    estado = leer_estado_maestro(FILE_ID_MAESTRO)
+    file_id_maestro = os.environ.get("FILE_ID_MAESTRO")
+    if not file_id_maestro:
+        volcar_log_sistema("[ERROR CRÍTICO] FILE_ID_MAESTRO no configurado.", "ERR_SISTEMA.txt")
+        return False
+
+    estado = leer_estado_maestro(file_id_maestro)
     historial = descargar_memoria_lineal()
     ahora = obtener_ahora()
 
@@ -147,11 +166,9 @@ def generar_resumen_pre_entreno():
     if report:
         clean_html = report.replace("```html", "").replace("```", "").strip()
 
-        # MAGIA DE DOBLE ESCRITURA: Le pasamos el texto crudo a la IA y el HTML a tu Diario Acumulado
+        # MAGIA DE DOBLE ESCRITURA
         texto_crudo_ia = f"[{ahora.isoformat()}] [READINESS] HRV: {telemetria_pulsera.get('hrv_promedio')}ms | Sueño: {telemetria_pulsera.get('sueño_horas')}h"
         actualizar_memoria_lineal(texto_crudo_ia, clean_html)
-
-        # Guardamos también una copia diaria suelta en 02_RESUMEN_DIARIO_IA
         return salvar_reporte_en_drive(clean_html, "02_RESUMEN_DIARIO_IA", "PRE_ENTRENO")
     return False
 
@@ -167,7 +184,9 @@ def extraer_metadatos_entreno(texto_crudo):
         fecha_str = data.get('fecha', 'TODAY')
         fecha_dt = ahora if fecha_str == "TODAY" else datetime.strptime(fecha_str, "%Y-%m-%d").replace(tzinfo=ZONA_HORARIA)
         return fecha_dt, data.get('tipo', 'ENTRENO').upper()
-    except: return ahora, "ENTRENO"
+    except Exception as e:
+        volcar_log_sistema(f"[WARN LLM] Fallo al extraer metadatos: {str(e)}", "WARN_METADATOS.txt")
+        return ahora, "ENTRENO"
 
 def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
     """Auditoría post-entrenamiento formateada en Google Docs."""
@@ -187,7 +206,6 @@ def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
     # MAGIA DE DOBLE ESCRITURA
     texto_crudo_ia = f"\n--- REPORTE POST-ENTRENO ---\n[Guardado en formato nativo Docs]"
     actualizar_memoria_lineal(texto_crudo_ia, clean_html)
-
     salvar_reporte_en_drive(clean_html, "02_RESUMEN_DIARIO_IA", f"POST_ENTRENO")
     return res
 
@@ -196,7 +214,6 @@ def procesar_telemetria_nativa_api(payload):
     prompt = f"Analyze health telemetry: {json.dumps(payload)}. Context: {historial_mes}. SPANISH. NO MARKDOWN, JUST PLAIN TEXT."
     resultado = ejecutar_peticion_rest(prompt, "gemini-3.1-flash-lite")
     if resultado:
-        # Aquí no mandamos HTML porque son solo pings técnicos de la API, no te interesa leerlos visualmente.
         actualizar_memoria_lineal(f"[TELEMETRÍA] {resultado.strip()}")
 
 def evaluar_mutacion_estado(raw_text, estado_actual):
@@ -205,15 +222,16 @@ def evaluar_mutacion_estado(raw_text, estado_actual):
     biométricas explícitas y devuelve el JSON maestro mutado si hay cambios.
     """
     prompt = f"""
-    SYSTEM: Eres un analizador de datos biométricos estricto.
-    TAREA: Revisa el siguiente reporte de entrenamiento y el estado actual del atleta.
-    ENTRENO: {raw_text[:1000]}
-    ESTADO_ACTUAL: {json.dumps(estado_actual)}
+    SYSTEM: You are a strict biometric data analyzer.
+    TASK: Review the following workout report and the athlete's current state.
+    WORKOUT: {raw_text[:1000]}
+    CURRENT_STATE: {json.dumps(estado_actual)}
 
-    REGLA 1: Si el usuario menciona explícitamente un nuevo peso corporal (ej. "Peso: 80", "peso en ayunas 80kg"), actualiza el campo 'peso_kg' dentro de 'biometria_actual'.
-    REGLA 2: Recalcula 'tendencia_peso_7dias' restando el nuevo peso al peso antiguo.
-    REGLA 3: Devuelve ÚNICA Y EXCLUSIVAMENTE el objeto JSON validado actualizado.
-    REGLA 4: NO uses bloques de código (```json). Devuelve el texto en bruto para que pueda ser parseado directamente. Si no hay cambios en el peso, devuelve el JSON original intacto.
+    RULE 1: If the user explicitly mentions a new body weight (e.g., "Peso: 80", "peso en ayunas 80kg"), update the 'peso_kg' field inside 'biometria_actual'.
+    RULE 2: Recalculate 'tendencia_peso_7dias' by subtracting the old weight from the new weight.
+    RULE 3: Return ONLY the updated, validated JSON object. No conversational text.
+    RULE 4: DO NOT use markdown code blocks (```json). Return raw text so it can be parsed directly. If there are no weight changes, return the exact original JSON.
+    OUTPUT LANGUAGE: SPANISH (for any internal text fields, if applicable, though JSON keys must remain identical).
     """
 
     res = ejecutar_peticion_rest(prompt, "gemini-3.1-flash-lite")
@@ -225,5 +243,5 @@ def evaluar_mutacion_estado(raw_text, estado_actual):
         nuevo_estado = json.loads(clean_json)
         return nuevo_estado
     except Exception as e:
-        actualizar_memoria_lineal(f"[ALERTA AUTONOMÍA] Fallo al parsear JSON: {str(e)}")
+        actualizar_memoria_lineal(f"[ALERTA AUTONOMÍA] Fallo al parsear JSON de mutación: {str(e)}")
         return estado_actual

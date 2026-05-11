@@ -6,9 +6,8 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
-# CONFIGURACIÓN MAESTRA
-TOKEN_PATH = "token.json"
-FOLDER_SALUD_ID = "1s2GSGjlxChGy39jUxJFDiijBCWKKg-T5"
+# NOTA ARQUITECTÓNICA: TOKEN_PATH y FOLDER_SALUD_ID eliminados.
+# La infraestructura exige inyección vía variables de entorno en Cloud Run.
 
 MESES = {
     1: "01_ENERO", 2: "02_FEBRERO", 3: "03_MARZO", 4: "04_ABRIL",
@@ -24,10 +23,10 @@ NOMBRES_MESES = {
 
 def obtener_servicio_drive():
     token_env = os.environ.get("GOOGLE_OAUTH_TOKEN_JSON")
-    if token_env:
-        creds = Credentials.from_authorized_user_info(json.loads(token_env))
-    else:
-        creds = Credentials.from_authorized_user_file(TOKEN_PATH)
+    if not token_env:
+        raise RuntimeError("FALLO CRÍTICO: GOOGLE_OAUTH_TOKEN_JSON no inyectado en el entorno de Cloud Run.")
+
+    creds = Credentials.from_authorized_user_info(json.loads(token_env))
     return build('drive', 'v3', credentials=creds)
 
 def obtener_o_crear(nombre, parent_id, drive_service, es_carpeta=True):
@@ -44,15 +43,17 @@ def obtener_o_crear(nombre, parent_id, drive_service, es_carpeta=True):
 
 def resolver_ruta_diaria(fecha_dt, sub_nombre):
     """Enruta a SALUD -> AÑO -> MES -> SUB_CARPETA (Ej. 01_LYFTA_RAW)"""
+    folder_salud_id = os.environ["FOLDER_SALUD_ID"]
     drive_service = obtener_servicio_drive()
-    id_anio = obtener_o_crear(str(fecha_dt.year), FOLDER_SALUD_ID, drive_service)
+    id_anio = obtener_o_crear(str(fecha_dt.year), folder_salud_id, drive_service)
     id_mes = obtener_o_crear(MESES[fecha_dt.month], id_anio, drive_service)
     return obtener_o_crear(sub_nombre, id_mes, drive_service)
 
 def resolver_ruta_historico(fecha_dt):
     """Enruta a SALUD -> AÑO -> HISTORICO -> MES"""
+    folder_salud_id = os.environ["FOLDER_SALUD_ID"]
     drive_service = obtener_servicio_drive()
-    id_anio = obtener_o_crear(str(fecha_dt.year), FOLDER_SALUD_ID, drive_service)
+    id_anio = obtener_o_crear(str(fecha_dt.year), folder_salud_id, drive_service)
     id_historico = obtener_o_crear("HISTORICO", id_anio, drive_service)
     id_mes_historico = obtener_o_crear(MESES[fecha_dt.month], id_historico, drive_service)
     return id_mes_historico
@@ -153,7 +154,6 @@ def actualizar_memoria_lineal(nuevo_registro_texto, nuevo_registro_html=None):
         else:
             meta_doc = {'name': nombre_alvaro, 'parents': [id_destino], 'mimeType': 'application/vnd.google-apps.document'}
             drive_service.files().create(body=meta_doc, media_body=media_doc).execute()
-
 
 def descargar_memoria_lineal():
     """La IA SOLO lee su archivo TXT crudo para no alucinar."""
