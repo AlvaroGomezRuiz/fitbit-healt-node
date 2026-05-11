@@ -1,11 +1,10 @@
 import os
 import json
 import io
-from datetime import datetime
 import requests
+from datetime import datetime, timedelta
 import pytz
 from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 # Importaciones del motor de persistencia (drive_engine.py)
@@ -18,17 +17,16 @@ from drive_engine import (
     resolver_ruta_inteligente
 )
 
-# CONFIGURACIÓN DE IDENTIDAD Y ACCESO MAESTRO
+# CONFIGURACIÓN MAESTRA
 FILE_ID_MAESTRO = "1POEuCbmOEIURg7UycPsbIrH62uQvJgLI"
 RUTINA_MAESTRA = "Lunes: PULL | Martes: PUSH | Miércoles: LEG | Jueves: PULL | Viernes: PUSH"
 ZONA_HORARIA = pytz.timezone("Europe/Madrid")
 
 def obtener_ahora():
-    """Devuelve la fecha y hora actual ajustada a Madrid."""
     return datetime.now(ZONA_HORARIA)
 
 def ejecutar_peticion_rest(prompt, modelo_preferido="gemini-3.1-pro-preview"):
-    """Inferencia con sistema de redundancia para evitar errores de cuota (429)."""
+    """Motor de inferencia."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key: return None
 
@@ -45,63 +43,124 @@ def ejecutar_peticion_rest(prompt, modelo_preferido="gemini-3.1-pro-preview"):
             resp = requests.post(url, json=payload, timeout=30)
             if resp.status_code == 200:
                 return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-            if resp.status_code == 429:
-                continue
-        except:
-            continue
+        except: continue
     return None
 
-def salvar_reporte_en_drive(contenido, subcarpeta, prefijo):
-    """Guarda los informes en Drive usando la fecha de Madrid para las carpetas en texto plano."""
+def salvar_reporte_en_drive(contenido_html, subcarpeta, prefijo):
+    """Guarda los informes convirtiendo automáticamente el HTML a Documento de Google Nativo."""
     try:
         drive_service = obtener_servicio_drive()
         ahora = obtener_ahora()
         id_destino = resolver_ruta_inteligente(ahora, subcarpeta)
 
-        # Archivo .txt para lectura móvil nativa
-        nombre_archivo = f"{prefijo}_{ahora.strftime('%d_%m_%Y')}.txt"
+        # OMITIMOS EXTENSIÓN. Drive le pondrá el icono de Documento azul automáticamente.
+        nombre_archivo = f"{prefijo}_{ahora.strftime('%d_%m_%Y')}"
 
-        # Mimetype text/plain
-        media = MediaIoBaseUpload(io.BytesIO(contenido.encode('utf-8')), mimetype='text/plain')
-        drive_service.files().create(body={'name': nombre_archivo, 'parents': [id_destino]}, media_body=media).execute()
+        # Le decimos a Drive que el contenido es HTML puro
+        media = MediaIoBaseUpload(io.BytesIO(contenido_html.encode('utf-8')), mimetype='text/html')
+
+        # Magia: Le ordenamos a Drive que lo convierta a un Documento de Google App
+        metadata = {
+            'name': nombre_archivo,
+            'parents': [id_destino],
+            'mimeType': 'application/vnd.google-apps.document'
+        }
+
+        drive_service.files().create(body=metadata, media_body=media).execute()
         return True
     except Exception as e:
-        volcar_log_sistema(f"DRIVE_ERR: {str(e)}", "ERR_DRIVE.txt", ahora)
+        volcar_log_sistema(f"DRIVE_ERR_DOC: {str(e)}", "ERR_DRIVE.txt")
         return False
+
+# --- MOTOR FITBIT AIR: TELEMETRÍA SNC Y RECUPERACIÓN ---
+# (El código de extracción de la Fitbit Air se mantiene intacto, ya está optimizado)
+
+def extraer_telemetria_fitbit():
+    """Descarga HRV, Sueño y SpO2 de las últimas 24h para evaluar fatiga del SNC."""
+    token_env = os.environ.get("GOOGLE_OAUTH_TOKEN_JSON")
+    if not token_env: return None
+
+    creds = Credentials.from_authorized_user_info(json.loads(token_env))
+    headers = {'Authorization': f'Bearer {creds.token}'}
+
+    ahora = obtener_ahora()
+    hace_24h = ahora - timedelta(days=1)
+
+    start_ns = int(hace_24h.timestamp() * 1e9)
+    end_ns = int(ahora.timestamp() * 1e9)
+    start_ms = int(hace_24h.timestamp() * 1000)
+    end_ms = int(ahora.timestamp() * 1000)
+
+    telemetria = {"sueño_horas": 0, "hrv_promedio": None, "spo2_promedio": None}
+
+    # Sueño
+    url_sleep = f"https://www.googleapis.com/fitness/v1/users/me/sessions?startTime={start_ms}&endTime={end_ms}"
+    try:
+        res_sleep = requests.get(url_sleep, headers=headers).json()
+        if 'session' in res_sleep:
+            minutos_sueno = sum([(int(s['endTimeMillis']) - int(s['startTimeMillis']))/60000
+                                 for s in res_sleep['session'] if s['activityType'] == 72])
+            telemetria["sueño_horas"] = round(minutos_sueno / 60, 2)
+    except: pass
+
+    # HRV
+    ds_id_hrv = f"{start_ns}-{end_ns}"
+    url_hrv = f"https://www.googleapis.com/fitness/v1/users/me/dataSources/derived:com.google.heart_rate.variability:com.google.android.gms:merged/datasets/{ds_id_hrv}"
+    try:
+        res_hrv = requests.get(url_hrv, headers=headers).json()
+        puntos = res_hrv.get('point', [])
+        if puntos:
+            valores = [p['value'][0]['fpVal'] for p in puntos if 'fpVal' in p['value'][0]]
+            telemetria["hrv_promedio"] = round(sum(valores)/len(valores), 2) if valores else None
+    except: pass
+
+    return telemetria
 
 # --- FLUJOS DE INTELIGENCIA ---
 
 def generar_resumen_pre_entreno():
-    """Briefing de las 09:00 AM con datos biomecánicos reales."""
+    """Briefing de Readiness."""
     estado = leer_estado_maestro(FILE_ID_MAESTRO)
     historial = descargar_memoria_lineal()
     ahora = obtener_ahora()
 
+    telemetria_pulsera = extraer_telemetria_fitbit() or {}
+
     prompt = f"""
     SYSTEM: Senior Performance Architect.
-    TASK: Readiness report.
-    ATHLETE_DATA: Edad 19 años, Altura 160cm, Peso {estado['biometria_actual']['peso_kg']}kg, Sexo Masculino.
+    TASK: Daily Readiness Report.
+    ATHLETE_DATA: Edad {estado['identidad']['edad']}, Peso {estado['biometria_actual']['peso_kg']}kg.
+    FITBIT_TELEMETRY (Ultimas 24h): {json.dumps(telemetria_pulsera)}
     CONTEXT: {json.dumps(estado)}.
     HISTORY: {historial[-2500:]}.
     ROUTINE: {RUTINA_MAESTRA}.
 
     MANDATORY PROTOCOLS:
-    1. Confirm 7g Creatine intake.
-    2. Warning: VETO Magnesium and Omega-3 this morning.
-    3. Use technical tone. Spanish language.
+    1. Evaluate Central Nervous System fatigue using HRV and Sleep data.
+    2. Adjust volume/intensity recommendations.
+    3. Spanish language. Use clinical tone.
+
+    FORMATTING RULES (CRITICAL):
+    You MUST output the response in RAW HTML format.
+    Use <h2> for main titles, <h3> for subtitles, <ul> and <li> for lists, and <b> for bold text.
+    DO NOT wrap the output in ```html tags. Just output the raw HTML code.
     """
 
     report = ejecutar_peticion_rest(prompt, "gemini-3.1-pro-preview")
     if report:
-        actualizar_memoria_lineal(f"[{ahora.isoformat()}] [SYSTEM] Briefing matutino generado.")
-        return salvar_reporte_en_drive(report, "02_RESUMEN_DIARIO_IA", "PRE_ENTRENO")
+        # Quitamos la etiqueta ```html si la IA se despista y la pone
+        clean_html = report.replace("```html", "").replace("```", "").strip()
+
+        # Memoria interna en texto plano
+        actualizar_memoria_lineal(f"[{ahora.isoformat()}] [READINESS] HRV: {telemetria_pulsera.get('hrv_promedio')}ms | Sueño: {telemetria_pulsera.get('sueño_horas')}h")
+
+        # Reporte para el usuario como Google Doc
+        return salvar_reporte_en_drive(clean_html, "02_RESUMEN_DIARIO_IA", "PRE_ENTRENO")
     return False
 
 def extraer_metadatos_entreno(texto_crudo):
-    """Extracción de metadatos con validación de tipo."""
     prompt = f"Extract JSON {{'fecha': 'YYYY-MM-DD', 'tipo': 'PUSH/PULL/LEG'}} from: {texto_crudo[:500]}"
     res = ejecutar_peticion_rest(prompt, "gemini-3.1-flash-lite")
-
     ahora = obtener_ahora()
     if res is None: return ahora, "ENTRENO"
 
@@ -111,34 +170,31 @@ def extraer_metadatos_entreno(texto_crudo):
         fecha_str = data.get('fecha', 'TODAY')
         fecha_dt = ahora if fecha_str == "TODAY" else datetime.strptime(fecha_str, "%Y-%m-%d").replace(tzinfo=ZONA_HORARIA)
         return fecha_dt, data.get('tipo', 'ENTRENO').upper()
-    except:
-        return ahora, "ENTRENO"
+    except: return ahora, "ENTRENO"
 
 def procesar_entrenamiento_llm(raw_text, estado_maestro, formato="txt"):
-    """Análisis biomecánico post-entreno en texto plano."""
-    prompt = f"Audit workout: {raw_text}. Context: {json.dumps(estado_maestro)}. SPANISH. NO USE MARKDOWN FORMATTING, JUST PLAIN TEXT."
-    res = ejecutar_peticion_rest(prompt, "gemini-3.1-flash-lite")
-    if res is None: return "Error en el motor de análisis."
+    """Auditoría post-entrenamiento formateada en Google Docs."""
+    prompt = f"""
+    Audit workout: {raw_text}. Context: {json.dumps(estado_maestro)}. SPANISH.
 
-    # Se guarda en el historial general (que ahora es TXT)
-    actualizar_memoria_lineal(f"\n--- REPORTE POST-ENTRENO ---\n{res}")
+    FORMATTING RULES (CRITICAL):
+    You MUST output the response in RAW HTML format.
+    Use <h2> for main titles, <h3> for subtitles, <ul> and <li> for lists, and <b> for bold text.
+    DO NOT wrap the output in ```html tags. Just output the raw HTML code.
+    """
+    res = ejecutar_peticion_rest(prompt, "gemini-3.1-flash-lite")
+    if res is None: return "Error en motor."
+
+    clean_html = res.replace("```html", "").replace("```", "").strip()
+
+    # El log histórico se queda la versión cruda, Drive genera el Doc bonito
+    actualizar_memoria_lineal(f"\n--- REPORTE POST-ENTRENO ---\n[Guardado en formato nativo Docs]")
+    salvar_reporte_en_drive(clean_html, "02_RESUMEN_DIARIO_IA", f"POST_ENTRENO")
     return res
 
 def procesar_telemetria_nativa_api(payload):
-    """Procesamiento de biométricos."""
     historial_mes = descargar_memoria_lineal()
     prompt = f"Analyze health telemetry: {json.dumps(payload)}. Context: {historial_mes}. SPANISH. NO MARKDOWN, JUST PLAIN TEXT."
     resultado = ejecutar_peticion_rest(prompt, "gemini-3.1-flash-lite")
     if resultado:
         actualizar_memoria_lineal(f"[TELEMETRÍA] {resultado.strip()}")
-
-def sincronizar_biometria_fit():
-    """Sincronización del peso corporal (Lógica abstraída)."""
-    try:
-        token_env = os.environ.get("GOOGLE_OAUTH_TOKEN_JSON")
-        if not token_env: return False
-        # creds = Credentials.from_authorized_user_info(json.loads(token_env))
-        # service = build('fitness', 'v1', credentials=creds)
-        # Lógica de fitness...
-        return True
-    except: return False

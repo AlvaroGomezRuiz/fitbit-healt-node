@@ -9,50 +9,48 @@ try:
 except ImportError:
     PdfReader = None
 
-# Importaciones desde el motor de inteligencia
+# Importaciones desde el motor de inteligencia (Actualizadas a la nueva arquitectura)
 from brain_engine import (
     procesar_entrenamiento_llm,
     procesar_telemetria_nativa_api,
-    sincronizar_biometria_fit,
     extraer_metadatos_entreno,
     generar_resumen_pre_entreno,
     FILE_ID_MAESTRO
 )
 
-# Importaciones desde el motor de persistencia
+# Importaciones desde el motor de persistencia (TXT Nativo)
 from drive_engine import (
     leer_estado_maestro,
     volcar_archivo_raw,
-    volcar_log_sistema,
-    actualizar_memoria_lineal
+    volcar_log_sistema
 )
 
-app = FastAPI(title="Google Health Premium Node")
+app = FastAPI(title="Google Health Premium Node - Core")
 
 def extraer_texto_pdf(file_content: bytes) -> str:
-    """Extracción segura de vectores de texto en archivos PDF."""
-    if PdfReader is None: return "Error: pypdf ausente."
+    """Decodificación vectorial segura de archivos Lyfta PDF."""
+    if PdfReader is None: return "Error crítico: pypdf no cargado."
     try:
         reader = PdfReader(io.BytesIO(file_content))
         return "\n".join([page.extract_text() or "" for page in reader.pages])
-    except: return "Error en PDF"
+    except: return "Fallo en decodificación PDF."
 
 def pipeline_entrenamiento_completo(content: bytes, extension: str, raw_text: str):
-    """Ejecución asíncrona del flujo de ingesta y análisis biomecánico."""
+    """Canalización asíncrona de ingesta de datos mecánicos y análisis."""
     try:
         fecha_dt, tipo_rutina = extraer_metadatos_entreno(raw_text)
         volcar_archivo_raw(content, extension, fecha_dt, tipo_rutina)
         estado_actual = leer_estado_maestro(FILE_ID_MAESTRO)
         procesar_entrenamiento_llm(raw_text, estado_actual, extension)
     except Exception as e:
-        msg_error = f"Error en pipeline: {str(e)}"
-        volcar_log_sistema(msg_error, f"ERR_{datetime.datetime.now().strftime('%H%M%S')}.txt")
+        # Volcado de errores directo a Drive en .txt
+        volcar_log_sistema(f"Fallo Pipeline: {str(e)}", f"ERR_{datetime.datetime.now().strftime('%H%M%S')}.txt")
 
 # --- ENDPOINTS DE PRODUCCIÓN ---
 
 @app.post("/webhook/lyfta_workout")
 async def recibir_entreno_lyfta(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    """Punto de entrada primario para reportes de entrenamiento."""
+    """Receptor primario de cargas mecánicas (Archivos de Lyfta)."""
     content = await file.read()
     filename = file.filename if file.filename else "entreno.txt"
     ext = filename.split('.')[-1].lower() if '.' in filename else 'txt'
@@ -60,17 +58,17 @@ async def recibir_entreno_lyfta(background_tasks: BackgroundTasks, file: UploadF
     try:
         raw_text = extraer_texto_pdf(content) if ext == "pdf" else content.decode('utf-8')
     except:
-        raw_text = "Contenido no decodificable"
+        raw_text = "Contenido no decodificable."
 
     background_tasks.add_task(pipeline_entrenamiento_completo, content, ext, raw_text)
-    return {"status": "accepted"}
+    return {"status": "ingesta_aceptada"}
 
 @app.post("/webhook/google_health_api")
 async def recibir_telemetria(request: Request, background_tasks: BackgroundTasks):
-    """Punto de entrada para streaming de biometría en tiempo real."""
+    """Receptor de telemetría genérica de la API."""
     payload = await request.json()
     background_tasks.add_task(procesar_telemetria_nativa_api, payload)
-    return {"status": "accepted"}
+    return {"status": "telemetria_en_proceso"}
 
 # --- ENDPOINTS DE AUTOMATIZACIÓN (CRON) ---
 
@@ -78,19 +76,13 @@ async def recibir_telemetria(request: Request, background_tasks: BackgroundTasks
 async def endpoint_resumen_matutino(background_tasks: BackgroundTasks):
     """
     DISPARADOR MAESTRO DE LAS 08:50 AM.
-    Activa el análisis de preparación (Readiness).
+    Activa el análisis de preparación (Readiness) descargando HRV y Sueño de la Fitbit Air.
     """
     background_tasks.add_task(generar_resumen_pre_entreno)
     return {
-        "status": "processing_readiness_report",
+        "status": "procesando_readiness_SNC",
         "timestamp": datetime.datetime.now().isoformat()
     }
-
-@app.post("/cron/diario")
-async def sincronizacion_peso():
-    """Endpoint de sincronización de biometría con Google Fitness API."""
-    exito = sincronizar_biometria_fit()
-    return {"ejecutado": exito}
 
 if __name__ == "__main__":
     # Configuración de puerto dinámica para Google Cloud Run
