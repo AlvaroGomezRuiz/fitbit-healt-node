@@ -1,7 +1,16 @@
-.vscode/
+### --- PYTHON ENVIRONMENT ---
 venv/
+.env
 __pycache__/
+*.py[cod]
+*$py.class
+
+### --- IDE & SYSTEM ---
+.vscode/
+.DS_Store
 *.log
+
+### --- DIRECTORIES & SECRETS ---
 secrets/
 scripts/
 

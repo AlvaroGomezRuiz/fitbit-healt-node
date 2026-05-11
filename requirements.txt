@@ -1,14 +1,19 @@
+### --- GOOGLE CLOUD & AUTHENTICATION ---
 google-api-python-client>=2.100.0
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
 google-generativeai>=0.5.4
 mcp>=1.0.0
+
+### --- API BACKEND & SERVER ---
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
+gunicorn>=21.2.0
+
+### --- UTILITIES & PROCESSING ---
 python-dotenv>=1.0.0
 requests>=2.31.0
 python-multipart>=0.0.6
 pypdf>=4.0.0
 pytz>=2024.1
-gunicorn>=21.2.0
