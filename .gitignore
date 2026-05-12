@@ -1,16 +1,37 @@
 ### --- PYTHON ENVIRONMENT ---
 venv/
+.venv/
+env/
+ENV/
 .env
+.env.*
+!.env.example
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
 
 ### --- IDE & SYSTEM ---
 .vscode/
+.idea/
 .DS_Store
+Thumbs.db
 *.log
 
-### --- DIRECTORIES & SECRETS ---
+### --- SECRETS (NUNCA committear) ---
+credenciales_oauth.json
+token.json
+*.token.json
+service-account-*.json
 secrets/
-scripts/
 
+### --- DOCKER ---
+*.dockerignore.bak
+
+### --- DEBUG / DESCARGAS LOCALES ---
+debug_drive/

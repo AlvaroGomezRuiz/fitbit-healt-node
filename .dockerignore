@@ -1,0 +1,37 @@
+### Entornos virtuales y caches
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+### Git y configuración de desarrollo
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+*.md
+README*
+
+### Secretos locales (NO entran en la imagen, se inyectan vía Secret Manager)
+.env
+.env.*
+credenciales_oauth.json
+token.json
+*.token.json
+service-account-*.json
+secrets/
+
+### Scripts de bootstrap local
+scripts/
+tests/
+
+### Artefactos varios
+*.log
+dist/
+build/
+*.egg-info/
