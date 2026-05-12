@@ -1,22 +1,21 @@
-### --- GOOGLE CLOUD & AUTHENTICATION ---
+# ── Google APIs (Drive + Health) ───────────────────────────────────────
 google-api-python-client>=2.100.0
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
-google-cloud-secret-manager>=2.20.0
 
-### --- API BACKEND & SERVER ---
+# ── API backend (FastAPI + workers Cloud Run) ──────────────────────────
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 gunicorn>=21.2.0
+python-multipart>=0.0.9
 
-### --- DATA VALIDATION & RESILIENCE ---
+# ── Validación + retry resiliente DeepSeek ─────────────────────────────
 pydantic>=2.6.0
 tenacity>=8.2.3
 
-### --- UTILITIES & PROCESSING ---
+# ── Utilidades ─────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
 requests>=2.31.0
-python-multipart>=0.0.9
 pypdf>=4.0.0
 pytz>=2024.1

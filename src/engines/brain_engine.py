@@ -1,6 +1,7 @@
 """
 Cerebro del sistema. Orquesta:
-  - Llamadas a Gemini 3.1 con cascada anti-rate-limit
+  - Llamadas a DeepSeek V4 (Pro + Flash) con cascada anti-rate-limit.
+    Endpoint OpenAI-compatible: https://api.deepseek.com/chat/completions
   - 3 reportes diarios (PRE / POST / NOCHE) en HTML + memoria lineal IA
   - Mutación validada del JSON maestro (5 guardarraíles clínicos)
   - Análisis del CSV histórico de entrenos → PERFIL_ATLETA.md
@@ -30,6 +31,7 @@ from .drive_engine import (
     actualizar_memoria_lineal,
     descargar_csv_contexto,
     descargar_memoria_lineal,
+    descargar_rutina_oficial,
     guardar_perfil_atleta,
     leer_estado_maestro,
     leer_perfil_atleta,
@@ -41,10 +43,16 @@ from .health_engine import resumen_telemetria_critica, snapshot_diario_completo
 ZONA_HORARIA = pytz.timezone("Europe/Madrid")
 
 # ──────────────────────────────────────────────────────────────────────────
-# CASCADA DE MODELOS GEMINI (anti-rate-limit + anti-modelo-inexistente)
-# Orden: Pro 3.1 preview → Pro 3 preview → Pro 2.5 estable → aliases.
-# Verificados con GET /v1beta/models en mayo 2026.
+# CASCADA DEEPSEEK V4 (anti-rate-limit + downgrade automático de tier)
+# Pro = razonamiento clínico (HRV, déficit calórico, periodización).
+# Flash = generación HTML estructurada y extracción rápida.
+# Si Pro 429/5xx → cae a Flash; si Flash también falla → todo el día se loggea.
 # ──────────────────────────────────────────────────────────────────────────
+
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+
+# Nombres oficiales según https://api-docs.deepseek.com/quick_start/pricing
+
 
 def _dedupe(items: list[str]) -> list[str]:
     """Mantiene orden eliminando duplicados."""
@@ -58,22 +66,15 @@ def _dedupe(items: list[str]) -> list[str]:
 
 
 CADENA_COMPLEJA = _dedupe([
-    os.environ.get("GEMINI_MODEL_COMPLEX", "gemini-3.1-pro-preview"),
-    "gemini-3.1-pro-preview",
-    "gemini-3-pro-preview",
-    "gemini-pro-latest",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
+    os.environ.get("DEEPSEEK_MODEL_COMPLEX", "deepseek-v4-pro"),
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
 ])
 
 CADENA_SIMPLE = _dedupe([
-    os.environ.get("GEMINI_MODEL_SIMPLE", "gemini-3.1-flash-lite"),
-    "gemini-3.1-flash-lite",
-    "gemini-3-flash-preview",
-    "gemini-flash-latest",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
+    os.environ.get("DEEPSEEK_MODEL_SIMPLE", "deepseek-v4-flash"),
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
 ])
 
 
@@ -85,10 +86,10 @@ def _es_reintentable(exc: BaseException) -> bool:
     """
     Solo reintenta errores transitorios DENTRO del mismo modelo.
 
-    429 = cuota agotada → no reintentar, saltar al siguiente modelo (la cuota
-    no se recupera en segundos en free tier).
-    404/400/403 = definitivos.
-    5xx + red = sí reintenta (3 intentos con backoff).
+    429 = saldo agotado / RPM excedido → no reintentar, saltar al siguiente
+    modelo (recuperación en segundos no garantizada).
+    401/402/403/404/400 = definitivos (auth, billing, modelo no existe).
+    5xx + red = sí reintenta (3 intentos con backoff exponencial).
     """
     if isinstance(exc, requests.HTTPError) and exc.response is not None:
         return exc.response.status_code in (500, 502, 503, 504)
@@ -103,53 +104,70 @@ def _es_reintentable(exc: BaseException) -> bool:
 )
 def _llamar_modelo(modelo: str, prompt: str, max_tokens: int) -> str:
     """
-    Llama al endpoint v1beta:generateContent de Gemini.
+    Llama a DeepSeek vía endpoint OpenAI-compatible.
 
-    Para modelos `flash` 2.5+ desactiva el thinking interno con
-    thinkingBudget=0: ahorra tokens y evita respuestas truncadas (el thinking
-    consume del presupuesto antes de emitir output visible).
-    Si el modelo no soporta thinkingConfig lo ignora silenciosamente.
+    Thinking mode: por defecto ACTIVO en V4 (mejor razonamiento clínico).
+    Para tareas SIMPLES (extracción metadatos, mutación JSON estricta) se
+    desactiva enviando `enable_thinking=False` para reducir latencia y coste.
+    Si la cuenta tiene caching habilitado, los bloques estables del prompt
+    (IDENTIDAD + PERFIL + GUARDARRAILES) cuestan ~1/40 del precio normal.
     """
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY no inyectada.")
+        raise RuntimeError("DEEPSEEK_API_KEY no inyectada.")
 
-    generation_config: dict[str, Any] = {
+    # IMPORTANTE: la API v4 SIEMPRE razona (no hay forma de desactivar thinking).
+    # `enable_thinking=False` se acepta pero se IGNORA silenciosamente, y consume
+    # el budget de max_tokens en reasoning_content (en chino) sin generar content.
+    # Por eso NO lo enviamos. En su lugar damos max_tokens generoso para que
+    # quepan reasoning + content.
+    payload: dict[str, Any] = {
+        "model": modelo,
+        "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.15,
-        "maxOutputTokens": max_tokens,
-        "topP": 0.95,
+        "max_tokens": max_tokens,
+        "top_p": 0.95,
+        "stream": False,
     }
-    if "flash" in modelo.lower() and "lite" not in modelo.lower():
-        generation_config["thinkingConfig"] = {"thinkingBudget": 0}
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": generation_config,
-    }
     resp = requests.post(
-        url,
-        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+        DEEPSEEK_URL,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
         json=payload,
-        timeout=60,
+        timeout=180,
     )
     resp.raise_for_status()
     data = resp.json()
-    try:
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError, TypeError) as e:
-        # Respuesta sin parts: probablemente truncada por MAX_TOKENS+thinking
-        # o filtros de seguridad. Lanzamos para que el fallback siga la cascada.
-        finish = (data.get("candidates") or [{}])[0].get("finishReason", "UNKNOWN")
-        raise RuntimeError(
-            f"Respuesta de {modelo} sin texto (finishReason={finish}): {e}"
-        ) from e
+    choices = data.get("choices") or []
+    msg0 = choices[0].get("message", {}) if choices else {}
+    content = msg0.get("content", "") or ""
+    finish = choices[0].get("finish_reason", "UNKNOWN") if choices else "UNKNOWN"
+    usage = data.get("usage", {}) or {}
+    reasoning_tokens = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+    if content.strip():
+        return content
+    # content vacío: casi siempre es reasoning agotó el budget (finish_reason=length).
+    raise RuntimeError(
+        f"Respuesta de {modelo} sin texto (finish={finish}, "
+        f"reasoning_tokens={reasoning_tokens}, completion_tokens={completion_tokens}, "
+        f"max_tokens={max_tokens}). Probablemente reasoning agotó budget."
+    )
 
 
-def llamar_llm(prompt: str, complejo: bool = True, max_tokens: int = 8192) -> str | None:
+def llamar_llm(prompt: str, complejo: bool = True, max_tokens: int = 16384) -> str | None:
     """
     Recorre la cadena de modelos hasta obtener respuesta.
     Devuelve None si TODA la cadena falla.
+
+    Para cada modelo:
+    - Intento 1 con max_tokens dado.
+    - Si el modelo devolvió content vacío por agotar reasoning (RuntimeError
+      con "reasoning"), intento 2 duplicando max_tokens (hasta 32768).
+    - Cualquier otro error: salta al siguiente modelo.
 
     Loguea a stderr (visible en scripts locales) + a Drive (visible en Cloud Run).
     """
@@ -158,29 +176,61 @@ def llamar_llm(prompt: str, complejo: bool = True, max_tokens: int = 8192) -> st
     errores: list[str] = []
 
     for modelo in cadena:
-        try:
-            return _llamar_modelo(modelo, prompt, max_tokens)
-        except requests.HTTPError as e:
-            # OJO: bool(requests.Response) es False si status>=400 (footgun).
-            # Hay que comparar con `is not None` explícitamente.
-            code = e.response.status_code if e.response is not None else 0
-            cuerpo = e.response.text[:300] if e.response is not None else ""
-            msg = f"[LLM] {modelo} → HTTP {code}: {cuerpo}"
-            errores.append(msg)
-            print(msg, file=sys.stderr)
+        # Primer intento con max_tokens dado; segundo intento duplicando hasta 32768
+        # SOLO si la causa fue content vacío por reasoning (no si fue 5xx/auth/etc).
+        intentos = [max_tokens, min(max_tokens * 2, 32768)]
+        if intentos[1] <= intentos[0]:
+            intentos = [max_tokens]
+        salto_modelo = False
+        for idx, mt in enumerate(intentos):
             try:
-                volcar_log_sistema(msg, f"WARN_LLM_{_ahora().strftime('%H%M%S')}.txt")
-            except Exception:
-                pass
-            continue
-        except Exception as e:
-            msg = f"[LLM] {modelo} → {type(e).__name__}: {str(e)[:300]}"
-            errores.append(msg)
-            print(msg, file=sys.stderr)
-            try:
-                volcar_log_sistema(msg, f"ERR_LLM_{_ahora().strftime('%H%M%S')}.txt")
-            except Exception:
-                pass
+                return _llamar_modelo(modelo, prompt, mt)
+            except RuntimeError as e:
+                msg_e = str(e)
+                # content vacío por reasoning agotado → reintentamos doblando budget
+                if "reasoning" in msg_e.lower() and idx + 1 < len(intentos):
+                    aviso = (
+                        f"[LLM] {modelo} → content vacío con max_tokens={mt}. "
+                        f"Reintento con {intentos[idx + 1]}."
+                    )
+                    print(aviso, file=sys.stderr)
+                    try:
+                        volcar_log_sistema(aviso, f"WARN_LLM_RETRY_{_ahora().strftime('%H%M%S')}.txt")
+                    except Exception:
+                        pass
+                    continue
+                msg = f"[LLM] {modelo} → RuntimeError: {msg_e[:300]}"
+                errores.append(msg)
+                print(msg, file=sys.stderr)
+                try:
+                    volcar_log_sistema(msg, f"ERR_LLM_{_ahora().strftime('%H%M%S')}.txt")
+                except Exception:
+                    pass
+                salto_modelo = True
+                break
+            except requests.HTTPError as e:
+                code = e.response.status_code if e.response is not None else 0
+                cuerpo = e.response.text[:300] if e.response is not None else ""
+                msg = f"[LLM] {modelo} → HTTP {code}: {cuerpo}"
+                errores.append(msg)
+                print(msg, file=sys.stderr)
+                try:
+                    volcar_log_sistema(msg, f"WARN_LLM_{_ahora().strftime('%H%M%S')}.txt")
+                except Exception:
+                    pass
+                salto_modelo = True
+                break
+            except Exception as e:
+                msg = f"[LLM] {modelo} → {type(e).__name__}: {str(e)[:300]}"
+                errores.append(msg)
+                print(msg, file=sys.stderr)
+                try:
+                    volcar_log_sistema(msg, f"ERR_LLM_{_ahora().strftime('%H%M%S')}.txt")
+                except Exception:
+                    pass
+                salto_modelo = True
+                break
+        if salto_modelo:
             continue
 
     resumen = "[LLM CRÍTICO] Toda la cadena falló.\n" + "\n".join(errores)
@@ -213,12 +263,65 @@ GUARDARRAÍLES CLÍNICOS DUROS (NO SUGERENCIAS, REGLAS):
 5. Si RPE auto-reportado >= 9 en 2 sesiones seguidas con HRV plano → SUBIR carbos a 220 g ese día (rebote glucógeno).
 """
 
+# ──────────────────────────────────────────────────────────────────────────
+# CALENDARIO SEMANAL: rotación de grupos + hidratación específica
+# ──────────────────────────────────────────────────────────────────────────
+# weekday(): 0=lunes, 1=martes, 2=miércoles, 3=jueves, 4=viernes, 5=sáb, 6=dom
+ROTACION_SEMANAL: dict[int, dict[str, str]] = {
+    0: {"grupo": "PULL",     "hidratacion": "Limonada casera (agua + sal + bicarbonato + zumo de limón + edulcorante)"},
+    1: {"grupo": "PUSH",     "hidratacion": "Agua de coco"},
+    2: {"grupo": "LEG",      "hidratacion": "Limonada casera (agua + sal + bicarbonato + zumo de limón + edulcorante)"},
+    3: {"grupo": "PULL",     "hidratacion": "Limonada casera (agua + sal + bicarbonato + zumo de limón + edulcorante)"},
+    4: {"grupo": "PUSH",     "hidratacion": "Agua de coco"},
+    5: {"grupo": "DESCANSO", "hidratacion": "Solo agua mineral"},
+    6: {"grupo": "DESCANSO", "hidratacion": "Solo agua mineral"},
+}
+
+NOMBRE_DIA_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+NOMBRE_MES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+                 "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def _bloque_fecha_y_rotacion(ahora_dt: datetime) -> str:
+    """
+    Devuelve un bloque de texto explícito con FECHA + DÍA + ROTACIÓN + HIDRATACIÓN
+    para inyectarlo en cada prompt. Sin esto, el LLM inventa la fecha.
+    """
+    wd = ahora_dt.weekday()
+    rot = ROTACION_SEMANAL[wd]
+    fecha_humana = (
+        f"{NOMBRE_DIA_ES[wd]} {ahora_dt.day} de {NOMBRE_MES_ES[ahora_dt.month - 1]} "
+        f"de {ahora_dt.year}"
+    )
+    es_domingo = wd == 6
+    plan_compra = (
+        "HOY ES DOMINGO: incluye al final un bloque resumen de COMPRA SEMANAL "
+        "(lista corta de alimentos clave para los 5 entrenos + descansos). Máx 8 viñetas."
+        if es_domingo
+        else "HOY NO ES DOMINGO: NO generes lista de la compra. La compra la gestiona el padre del atleta."
+    )
+    return f"""
+FECHA Y CALENDARIO (FUENTE DE VERDAD — NO INVENTAR):
+- Fecha local Madrid: {fecha_humana}
+- Día de la semana: {NOMBRE_DIA_ES[wd]} (weekday={wd})
+- Grupo muscular previsto hoy según rotación oficial: {rot['grupo']}
+- Hidratación oficial en gimnasio para hoy: {rot['hidratacion']}
+
+SUPLEMENTACIÓN DIARIA FIJA:
+- Creatina monohidrato 7 g/día (siempre, no negociable).
+- Magnesio y Omega-3: NO comprados aún. NO incluir en el plan hasta nuevo aviso.
+
+POLÍTICA DE LISTA DE LA COMPRA:
+- {plan_compra}
+"""
+
 
 def _contexto_atleta(estado: dict) -> str:
     edad = calcular_edad()
     historico = descargar_memoria_lineal()[-3000:]
     historico_prev = descargar_memoria_lineal(mes_offset=1)[-1500:]
     perfil = leer_perfil_atleta()[:2000]
+    rutina = descargar_rutina_oficial()[:4000]
 
     return f"""
 ATLETA:
@@ -240,6 +343,9 @@ OBJETIVO ACTUAL ({estado['objetivo']['tipo']}):
 
 GUARDARRAÍLES ACTIVOS:
 {json.dumps(estado['guardarrailes_activos'], indent=2, ensure_ascii=False)}
+
+RUTINA OFICIAL VIGENTE (fuente de verdad para series, pesos y técnica):
+{rutina}
 
 PERFIL ATLETA (síntesis del histórico CSV):
 {perfil}
@@ -281,6 +387,8 @@ def generar_pre_entreno() -> bool:
 ROL: Eres un Senior Performance Architect + Nutricionista Clínico de élite.
 TAREA: Briefing de Readiness diario (PRE-entreno) en formato HTML.
 
+{_bloque_fecha_y_rotacion(_ahora())}
+
 {_contexto_atleta(estado)}
 
 TELEMETRÍA FITBIT AIR (últimas 24h):
@@ -289,20 +397,22 @@ TELEMETRÍA FITBIT AIR (últimas 24h):
 {GUARDARRAILES_DOC}
 
 INSTRUCCIONES:
-1. Analiza fatiga del SNC con HRV, sueño y resting HR.
-2. Decide si hoy entrena o descansa (aplica guardarraíles).
-3. Si entrena: indica grupo muscular del día (rotación PUSH/PULL/LEG) y ajustes de carga.
-4. Plan nutricional del día: desayuno, comida, cena, snack pre y post entreno con números exactos (g proteína, g carbos, g grasa). Suma debe cuadrar con kcal_target.
-5. Lista de la compra implícita (qué alimentos comprar/preparar).
-6. Recordatorios: creatina 7g (cuándo tomarla), agua, vitaminas si aplica.
-7. Si los datos de la pulsera vienen NULL (todavía sin pulsera), trabaja solo con el JSON maestro y CSV histórico.
+1. Usa SIEMPRE la fecha y el día de la semana que aparecen en el bloque FECHA Y CALENDARIO arriba. Nunca inventes otra fecha.
+2. Analiza fatiga del SNC con HRV, sueño y resting HR.
+3. Decide si hoy entrena o descansa (aplica guardarraíles + rotación oficial).
+4. Si entrena: usa el grupo muscular previsto del bloque FECHA Y CALENDARIO. Lista los ejercicios concretos de RUTINA OFICIAL VIGENTE con sus pesos y ajustes (RIR, +2.5 kg si toca).
+5. Plan nutricional del día: desayuno, comida, cena, snack pre y post entreno con números exactos (g proteína, g carbos, g grasa). Suma debe cuadrar con kcal_target.
+6. Hidratación en el gimnasio: usa EXACTAMENTE la bebida del bloque FECHA Y CALENDARIO (limonada casera o agua de coco según día).
+7. Recordatorio creatina 7 g/día y momento ideal de tomarla. Magnesio/Omega-3 SOLO mencionar como "pendiente de compra".
+8. Lista de la compra: aplica la POLÍTICA DE LISTA DE LA COMPRA del bloque FECHA Y CALENDARIO. Si hoy no es domingo, NO incluyas ninguna sección de compra.
+9. Si los datos de la pulsera vienen NULL (todavía sin pulsera), trabaja solo con el JSON maestro y CSV histórico.
 
 FORMATO DE SALIDA OBLIGATORIO:
 - HTML PURO. Nada de markdown, nada de ```html.
 - Usa <h2> títulos principales, <h3> subtítulos, <ul><li>, <b> para negrita, <table> con clase 'plan' para macros.
 - Idioma: español clínico, directo, sin filler.
 """
-    res = llamar_llm(prompt, complejo=True, max_tokens=8192)
+    res = llamar_llm(prompt, complejo=True, max_tokens=16384)
     if not res:
         return False
 
@@ -365,6 +475,8 @@ def generar_post_entreno(raw_text: str) -> bool:
 ROL: Senior Performance Architect + Nutricionista Clínico de élite.
 TAREA: Auditoría POST-entreno + ajuste calórico/macros del resto del día.
 
+{_bloque_fecha_y_rotacion(_ahora())}
+
 {_contexto_atleta(estado)}
 
 TELEMETRÍA FITBIT AIR HOY:
@@ -376,20 +488,22 @@ ENTRENO QUE ACABA DE REALIZAR (Lyfta TXT):
 {GUARDARRAILES_DOC}
 
 INSTRUCCIONES:
-1. Audita el entreno: progresión vs PRs históricos, RPE estimado, calidad de la sesión.
-2. Compara TOP_SETS con la última sesión del mismo grupo (aplica guardarraíl #3 si procede).
-3. Calcula kcal y macros restantes del día (lo que ya consumió vs target).
-4. Plan exacto de comida POST-entreno (g proteína, g carbos, ventana de 90 min).
-5. Plan exacto de cena + snack nocturno si quedan macros pendientes.
-6. Recordatorio creatina si no la ha tomado hoy.
-7. Predicción de progresión para la PRÓXIMA sesión del mismo grupo.
+1. Usa SIEMPRE la fecha y el día de la semana del bloque FECHA Y CALENDARIO. Nunca inventes otra fecha.
+2. Audita el entreno: progresión vs PRs históricos, RPE estimado, calidad de la sesión.
+3. Compara TOP_SETS con la última sesión del mismo grupo (aplica guardarraíl #3 si procede). Si hay Lateral Raise, recuerda que es TRISERIE en dropset (3 series × 30 reps = 90 reps totales), no 9 series independientes.
+4. Calcula kcal y macros restantes del día (lo que ya consumió vs target).
+5. Plan exacto de comida POST-entreno (g proteína, g carbos, ventana de 90 min).
+6. Plan exacto de cena + snack nocturno si quedan macros pendientes.
+7. Recordatorio creatina 7 g/día si no la ha tomado hoy. NO sugerir magnesio ni Omega-3 (pendientes de compra).
+8. Predicción de progresión para la PRÓXIMA sesión del mismo grupo (basado en RUTINA OFICIAL VIGENTE).
+9. NO incluyas lista de la compra: aplica la POLÍTICA del bloque FECHA Y CALENDARIO (solo el domingo).
 
 FORMATO DE SALIDA OBLIGATORIO:
 - HTML PURO. Nada de markdown.
 - <h2>, <h3>, <ul>, <table class='plan'>.
 - Español clínico.
 """
-    res = llamar_llm(prompt, complejo=True, max_tokens=8192)
+    res = llamar_llm(prompt, complejo=True, max_tokens=16384)
     if not res:
         return False
 
@@ -438,6 +552,8 @@ def generar_resumen_noche() -> bool:
 ROL: Senior Performance Architect + Nutricionista Clínico de élite.
 TAREA: Cierre del día. Resumen general, comparativa vs target y predicción mañana.
 
+{_bloque_fecha_y_rotacion(_ahora())}
+
 {_contexto_atleta(estado)}
 
 TELEMETRÍA FITBIT AIR FINAL DEL DÍA:
@@ -446,18 +562,20 @@ TELEMETRÍA FITBIT AIR FINAL DEL DÍA:
 {GUARDARRAILES_DOC}
 
 INSTRUCCIONES:
-1. Cierre nutricional: kcal y macros conseguidos vs target. % adherencia.
-2. Cierre entreno: si entrenó hoy, calidad de sesión; si descansó, justificación.
-3. Estado SNC: tendencia HRV 7d, sueño promedio 7d, banderas activadas.
-4. Tendencias 7d (peso, fuerza media en TOP_SETS, sueño).
-5. Plan de mañana: qué grupo toca, qué hora dormir, qué desayuno preparar.
-6. Si guardarraíles disparan, ESCRIBE LA RECOMENDACIÓN COMO ORDEN, no sugerencia.
+1. Usa SIEMPRE la fecha y el día de la semana del bloque FECHA Y CALENDARIO. Nunca inventes otra fecha.
+2. Cierre nutricional: kcal y macros conseguidos vs target. % adherencia.
+3. Cierre entreno: si entrenó hoy, calidad de sesión; si descansó, justificación.
+4. Estado SNC: tendencia HRV 7d, sueño promedio 7d, banderas activadas.
+5. Tendencias 7d (peso, fuerza media en TOP_SETS, sueño).
+6. Plan de mañana: qué grupo toca (cruza FECHA+1 contra rotación oficial), qué hora dormir, qué desayuno preparar, qué hidratación llevar al gym.
+7. Si guardarraíles disparan, ESCRIBE LA RECOMENDACIÓN COMO ORDEN, no sugerencia.
+8. Lista de la compra: aplica la POLÍTICA del bloque FECHA Y CALENDARIO. SOLO el domingo incluye un resumen semanal corto (máx 8 viñetas) para que el padre lo compre el lunes.
 
 FORMATO DE SALIDA OBLIGATORIO:
 - HTML PURO. <h2>, <h3>, <ul>, <table>.
 - Español clínico.
 """
-    res = llamar_llm(prompt, complejo=True, max_tokens=8192)
+    res = llamar_llm(prompt, complejo=True, max_tokens=16384)
     if not res:
         return False
 
@@ -593,7 +711,7 @@ INSTRUCCIONES:
 - NO inventes datos: si una métrica no es deducible, escribe "N/D".
 - Devuelve SOLO el Markdown, sin texto introductorio.
 """
-    res = llamar_llm(prompt, complejo=True, max_tokens=8192)
+    res = llamar_llm(prompt, complejo=True, max_tokens=16384)
     if not res:
         return False
 

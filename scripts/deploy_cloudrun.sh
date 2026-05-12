@@ -9,33 +9,40 @@ PROJECT_ID="${PROJECT_ID:-fitbit-healt-node}"
 REGION="${REGION:-europe-west1}"
 SERVICE="${SERVICE:-fitbit-node}"
 SECRET_OAUTH="google-oauth-token"
-SECRET_GEMINI="gemini-api-key"
+SECRET_DEEPSEEK="deepseek-api-key"
 SECRET_ADMIN="admin-token"
 
 # ── Variables públicas del runtime (Drive IDs + identidad atleta) ───
 FOLDER_SALUD_ID="${FOLDER_SALUD_ID:-1s2GSGjlxChGy39jUxJFDiijBCWKKg-T5}"
-FILE_ID_MAESTRO="${FILE_ID_MAESTRO:-1POEuCbmOEIURg7UycPsbIrH62uQvJgLI}"
+FILE_ID_MAESTRO="${FILE_ID_MAESTRO:-17ZGn8otBiRN9dgSo6WyoDV1h_d1WwXPp}"
 FECHA_NACIMIENTO="${FECHA_NACIMIENTO:-2007-03-05}"
 ALTURA_CM="${ALTURA_CM:-160}"
 PESO_KG_INICIAL="${PESO_KG_INICIAL:-82}"
-GEMINI_MODEL_COMPLEX="${GEMINI_MODEL_COMPLEX:-gemini-3.1-pro-preview}"
-GEMINI_MODEL_SIMPLE="${GEMINI_MODEL_SIMPLE:-gemini-3.1-flash-lite}"
+DEEPSEEK_MODEL_COMPLEX="${DEEPSEEK_MODEL_COMPLEX:-deepseek-v4-pro}"
+DEEPSEEK_MODEL_SIMPLE="${DEEPSEEK_MODEL_SIMPLE:-deepseek-v4-flash}"
+
+# KILL SWITCH del Health API: "false" hasta que llegue la pulsera (26 mayo 2026).
+# Cuando llegue, cambiar a "true" con:
+#   gcloud run services update fitbit-node --region=europe-west1 \
+#     --update-env-vars=FITBIT_ACTIVO=true
+FITBIT_ACTIVO="${FITBIT_ACTIVO:-false}"
 
 echo "[1/5] Configurando proyecto ${PROJECT_ID}"
 gcloud config set project "${PROJECT_ID}"
 
 echo "[2/5] Habilitando APIs necesarias (idempotente)"
+# DeepSeek se llama directamente a api.deepseek.com (no necesita habilitar
+# servicio GCP). Solo APIs Google que sí usamos.
 gcloud services enable \
   run.googleapis.com \
   cloudbuild.googleapis.com \
   secretmanager.googleapis.com \
   cloudscheduler.googleapis.com \
   health.googleapis.com \
-  drive.googleapis.com \
-  generativelanguage.googleapis.com
+  drive.googleapis.com
 
 echo "[3/5] Verificando que existen los secretos en Secret Manager"
-for s in "${SECRET_OAUTH}" "${SECRET_GEMINI}" "${SECRET_ADMIN}"; do
+for s in "${SECRET_OAUTH}" "${SECRET_DEEPSEEK}" "${SECRET_ADMIN}"; do
   if ! gcloud secrets describe "${s}" >/dev/null 2>&1; then
     echo ""
     echo "[ERROR] Falta el secreto '${s}'. Créalo con:"
@@ -43,8 +50,8 @@ for s in "${SECRET_OAUTH}" "${SECRET_GEMINI}" "${SECRET_ADMIN}"; do
       "${SECRET_OAUTH}")
         echo "    gcloud secrets create ${s} --data-file=./token.json"
         ;;
-      "${SECRET_GEMINI}")
-        echo "    echo -n 'TU_GEMINI_API_KEY' | gcloud secrets create ${s} --data-file=-"
+      "${SECRET_DEEPSEEK}")
+        echo "    echo -n 'sk-TU_DEEPSEEK_API_KEY' | gcloud secrets create ${s} --data-file=-"
         ;;
       "${SECRET_ADMIN}")
         echo "    echo -n \"\$(uuidgen)\" | gcloud secrets create ${s} --data-file=-"
@@ -66,8 +73,8 @@ gcloud run deploy "${SERVICE}" \
   --concurrency=4 \
   --min-instances=0 \
   --max-instances=2 \
-  --set-env-vars="TZ=Europe/Madrid,FOLDER_SALUD_ID=${FOLDER_SALUD_ID},FILE_ID_MAESTRO=${FILE_ID_MAESTRO},FECHA_NACIMIENTO=${FECHA_NACIMIENTO},ALTURA_CM=${ALTURA_CM},PESO_KG_INICIAL=${PESO_KG_INICIAL},GEMINI_MODEL_COMPLEX=${GEMINI_MODEL_COMPLEX},GEMINI_MODEL_SIMPLE=${GEMINI_MODEL_SIMPLE},CSV_HISTORICO_PATH=/app/data/ENTRENOS_ALVARO_GOMEZ_RUIZ.csv" \
-  --set-secrets="GOOGLE_OAUTH_TOKEN_JSON=${SECRET_OAUTH}:latest,GEMINI_API_KEY=${SECRET_GEMINI}:latest,ADMIN_TOKEN=${SECRET_ADMIN}:latest"
+  --set-env-vars="TZ=Europe/Madrid,FOLDER_SALUD_ID=${FOLDER_SALUD_ID},FILE_ID_MAESTRO=${FILE_ID_MAESTRO},FECHA_NACIMIENTO=${FECHA_NACIMIENTO},ALTURA_CM=${ALTURA_CM},PESO_KG_INICIAL=${PESO_KG_INICIAL},DEEPSEEK_MODEL_COMPLEX=${DEEPSEEK_MODEL_COMPLEX},DEEPSEEK_MODEL_SIMPLE=${DEEPSEEK_MODEL_SIMPLE},FITBIT_ACTIVO=${FITBIT_ACTIVO}" \
+  --set-secrets="GOOGLE_OAUTH_TOKEN_JSON=${SECRET_OAUTH}:latest,DEEPSEEK_API_KEY=${SECRET_DEEPSEEK}:latest,ADMIN_TOKEN=${SECRET_ADMIN}:latest"
 
 echo "[5/5] Deploy completo. URL del servicio:"
 gcloud run services describe "${SERVICE}" --region="${REGION}" --format='value(status.url)'

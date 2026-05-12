@@ -1,4 +1,4 @@
-### Entornos virtuales y caches
+# ── Entornos virtuales y caches ───────────────────────────────────────
 venv/
 .venv/
 env/
@@ -8,7 +8,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-### Git y configuración de desarrollo
+# ── Git y configuración de desarrollo ─────────────────────────────────
 .git/
 .gitignore
 .github/
@@ -17,7 +17,7 @@ __pycache__/
 *.md
 README*
 
-### Secretos locales (NO entran en la imagen, se inyectan vía Secret Manager)
+# ── Secretos locales (se inyectan vía Secret Manager en Cloud Run) ───
 .env
 .env.*
 credenciales_oauth.json
@@ -26,11 +26,17 @@ token.json
 service-account-*.json
 secrets/
 
-### Scripts de bootstrap local
+# ── Datos personales y artefactos locales ────────────────────────────
+RUTINA/
+payments/
+debug_drive/
+assets/
+
+# ── Bootstrap local: scripts solo se ejecutan desde tu máquina ───────
 scripts/
 tests/
 
-### Artefactos varios
+# ── Artefactos varios ─────────────────────────────────────────────────
 *.log
 dist/
 build/

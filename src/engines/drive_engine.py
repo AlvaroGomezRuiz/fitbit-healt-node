@@ -382,6 +382,53 @@ def leer_perfil_atleta() -> str:
     return fh.getvalue().decode("utf-8", errors="replace")
 
 
+def guardar_rutina_oficial(markdown: str) -> str:
+    """
+    Sube/actualiza RUTINA_OFICIAL.md en 00_CONTEXTO_HISTORICO/.
+
+    Es la fuente de verdad de series/pesos/técnica vigente. Se inyecta en
+    cada prompt PRE/POST/NOCHE para que el LLM no se invente la rutina.
+    """
+    drive = obtener_servicio_drive()
+    id_ctx = resolver_ruta_contexto()
+    nombre = "RUTINA_OFICIAL.md"
+
+    q = f"name='{nombre}' and '{id_ctx}' in parents and trashed=false"
+    res = drive.files().list(q=q, fields="files(id)").execute()
+    media = MediaIoBaseUpload(io.BytesIO(markdown.encode("utf-8")), mimetype="text/markdown")
+
+    if res.get("files"):
+        fid = res["files"][0]["id"]
+        drive.files().update(fileId=fid, media_body=media).execute()
+        return fid
+    return drive.files().create(
+        body={"name": nombre, "parents": [id_ctx]}, media_body=media, fields="id"
+    ).execute()["id"]
+
+
+def descargar_rutina_oficial() -> str:
+    """
+    Devuelve el contenido de RUTINA_OFICIAL.md o cadena vacía si no existe.
+
+    Tolerante a fallos: si el archivo no está aún subido, retorna "" en lugar
+    de petar el cron. Así un Cloud Run nuevo sin RUTINA_OFICIAL subida aún
+    sigue generando reporte (con menos contexto, eso sí).
+    """
+    drive = obtener_servicio_drive()
+    id_ctx = resolver_ruta_contexto()
+    q = f"name='RUTINA_OFICIAL.md' and '{id_ctx}' in parents and trashed=false"
+    res = drive.files().list(q=q, fields="files(id)").execute()
+    archivos = res.get("files", [])
+    if not archivos:
+        return ""
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, drive.files().get_media(fileId=archivos[0]["id"]))
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return fh.getvalue().decode("utf-8", errors="replace")
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # RETENCIÓN: PURGA AUTOMÁTICA DE 04_HEALTH_RAW > 120 DÍAS
 # ──────────────────────────────────────────────────────────────────────────

@@ -35,7 +35,6 @@ from .engines.brain_engine import (
 )
 from .engines.drive_engine import (
     purgar_health_raw_antiguos,
-    subir_csv_contexto,
     volcar_archivo_raw,
     volcar_log_sistema,
 )
@@ -193,29 +192,18 @@ async def webhook_health_push(request: Request):
 async def admin_seed(x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
     """
     Regenera PERFIL_ATLETA.md a partir del CSV ya presente en Drive
-    (00_CONTEXTO_HISTORICO/). El CSV debe haberse subido UNA vez con
-    `python -m scripts.seed_drive --upload-csv` desde local.
+    (00_CONTEXTO_HISTORICO/).
 
-    Si en el futuro hay un CSV nuevo en el filesystem del contenedor
-    (env var CSV_HISTORICO_PATH), también se reincorpora a Drive antes
-    de regenerar el perfil.
+    Para subir un CSV nuevo desde local, ejecutar:
+        python -m scripts.actualizar_contexto_drive --csv RUTINA/ENTRENOS_ALVARO_GOMEZ_RUIZ.csv
 
     Protegido por header X-Admin-Token (env ADMIN_TOKEN).
     """
     if not ADMIN_TOKEN or x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=403, detail="Token inválido.")
 
-    fid_csv: str | None = None
-    csv_path = os.environ.get("CSV_HISTORICO_PATH", "")
-    if csv_path and os.path.exists(csv_path):
-        fid_csv = subir_csv_contexto(csv_path)
-
     ok_perfil = generar_perfil_atleta_desde_csv()
-
-    return {
-        "csv_file_id_local_subido": fid_csv,
-        "perfil_generado": ok_perfil,
-    }
+    return {"perfil_generado": ok_perfil}
 
 
 if __name__ == "__main__":

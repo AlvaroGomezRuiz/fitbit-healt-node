@@ -1,11 +1,8 @@
-### --- PYTHON ENVIRONMENT ---
+# ── Python environment ────────────────────────────────────────────────
 venv/
 .venv/
 env/
 ENV/
-.env
-.env.*
-!.env.example
 __pycache__/
 *.py[cod]
 *$py.class
@@ -16,22 +13,26 @@ __pycache__/
 dist/
 build/
 
-### --- IDE & SYSTEM ---
+# ── IDE & sistema ─────────────────────────────────────────────────────
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 *.log
 
-### --- SECRETS (NUNCA committear) ---
+# ── Secretos (NUNCA committear) ───────────────────────────────────────
+.env
+.env.*
+!.env.example
 credenciales_oauth.json
 token.json
 *.token.json
 service-account-*.json
 secrets/
 
-### --- DOCKER ---
-*.dockerignore.bak
-
-### --- DEBUG / DESCARGAS LOCALES ---
+# ── Datos personales del atleta ───────────────────────────────────────
+# CSV de entrenos y exports privados. El sistema los sube a Drive vía
+# scripts/actualizar_contexto_drive.py y los lee desde allí.
+RUTINA/
+payments/
 debug_drive/

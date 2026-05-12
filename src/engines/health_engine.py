@@ -222,10 +222,15 @@ def snapshot_diario_completo(dia: date | None = None) -> dict:
     """
     Orquestador: extrae los 31 data types para `dia` (hoy si None).
 
-    CIRCUIT BREAKER: si la primera llamada falla con 4xx (pulsera inactiva o
-    sin permisos), se aborta INMEDIATAMENTE devolviendo snapshot vacío.
-    Sin esto, las 31 llamadas serializadas con timeout 10s + retry tardarían
-    >5 min y reventarían el worker timeout de gunicorn.
+    KILL SWITCH (FITBIT_ACTIVO): si la env var no es "true", saltamos el
+    snapshot entero y devolvemos dict vacío en <50 ms. Necesario porque
+    Google Health API responde HTTP 200 con datos vacíos (no 4xx) cuando
+    no hay pulsera enrolada todavía, así que el circuit-breaker de abajo
+    no se dispara y serializa 31 llamadas lentas hasta WORKER TIMEOUT.
+    Activar a "true" SOLO cuando llegue el Fitbit Air (26 mayo 2026).
+
+    CIRCUIT BREAKER: si la primera llamada falla con 4xx (permisos), se
+    aborta también devolviendo snapshot vacío.
     """
     dia = dia or _ahora_madrid().date()
     civil_inicio = datetime(dia.year, dia.month, dia.day, 0, 0, 0)
@@ -241,6 +246,14 @@ def snapshot_diario_completo(dia: date | None = None) -> dict:
         "errores": [],
         "pulsera_activa": True,
     }
+
+    # KILL SWITCH: si la pulsera aún no está enrolada, salir inmediato.
+    if os.environ.get("FITBIT_ACTIVO", "false").lower() != "true":
+        resultado["pulsera_activa"] = False
+        resultado["errores"].append(
+            {"_resumen": "FITBIT_ACTIVO=false. Snapshot saltado (pulsera aún no enrolada)."}
+        )
+        return resultado
 
     # CIRCUIT BREAKER: probe con un solo tipo. Si falla con 4xx, no hay pulsera.
     try:
