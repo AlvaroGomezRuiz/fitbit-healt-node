@@ -9,13 +9,11 @@ Nodo de telemetría de salud auto-hospedado en **Google Cloud Run** que:
 - Muta el JSON biométrico maestro de forma **validada por Pydantic**.
 - Aplica **5 guardarraíles clínicos duros** sobre cualquier recomendación del LLM.
 
-URL en producción: `https://fitbit-node-443224698452.europe-west1.run.app`
+URL de producción: la que devuelva `gcloud run deploy` al final del despliegue (formato `https://fitbit-node-<HASH>-<REGION>.a.run.app`).
 
 ---
 
-## Qué se sube a GitHub y qué NO
-
-### Sí se sube (código + configuración pública)
+## Contenido del repositorio
 
 ```
 .dockerignore           Exclusiones para la imagen Docker
@@ -29,20 +27,7 @@ scripts/                Bootstrap, deploy y herramientas de operación
 src/                    Código de la aplicación (FastAPI + engines)
 ```
 
-### Nunca se sube (bloqueado por `.gitignore`)
-
-| Ruta | Por qué |
-|---|---|
-| `.env` | `DEEPSEEK_API_KEY`, `GOOGLE_OAUTH_TOKEN_JSON`, `ADMIN_TOKEN`, IDs privados Drive |
-| `token.json` | Refresh token OAuth — acceso total a Health + Drive |
-| `secrets/credenciales_oauth.json` | Client ID + Secret del proyecto Google |
-| `secrets/` | Carpeta entera ignorada |
-| `RUTINA/` | Datos personales (CSV de 140 entrenos + capturas) |
-| `payments/` | PDFs de facturación |
-| `venv/`, `__pycache__/` | Entorno virtual y caché Python |
-| `.vscode/`, `.idea/` | Config local del IDE |
-
-En producción los secretos viven en **Google Secret Manager** y se montan en Cloud Run como variables de entorno; nunca quedan en disco ni en la imagen.
+Los **secretos** (API keys, tokens OAuth) y los **datos personales** (CSV histórico, capturas, facturas) están bloqueados por `.gitignore` y nunca llegan al repositorio. En producción los secretos viven en **Google Secret Manager** y se inyectan en Cloud Run como variables de entorno; jamás quedan en disco ni en la imagen Docker.
 
 ---
 
@@ -94,8 +79,9 @@ echo -n "sk-TU_DEEPSEEK_KEY" | gcloud secrets create deepseek-api-key --data-fil
 echo -n "$(uuidgen)"         | gcloud secrets create admin-token     --data-file=-
 
 # Da permiso al service account de Cloud Run para leer secretos
+PROJECT_NUMBER=$(gcloud projects describe fitbit-healt-node --format='value(projectNumber)')
 gcloud projects add-iam-policy-binding fitbit-healt-node \
-  --member="serviceAccount:443224698452-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 ```
 
@@ -148,7 +134,7 @@ gcloud run services update fitbit-node \
 `POST` multipart al endpoint:
 
 ```
-https://fitbit-node-443224698452.europe-west1.run.app/webhook/lyfta_workout
+<TU_URL_CLOUD_RUN>/webhook/lyfta_workout
 ```
 
 con campo `file` = el TXT/PDF del entreno. Respuesta en 30-180 s; el atajo iOS tolera hasta 2 min.
@@ -156,7 +142,7 @@ con campo `file` = el TXT/PDF del entreno. Respuesta en 30-180 s; el atajo iOS t
 ### 7. (Opcional) Suscribir webhooks de Google Health API
 
 ```bash
-ENDPOINT_URI="https://fitbit-node-443224698452.europe-west1.run.app/webhook/health_push"
+ENDPOINT_URI="<TU_URL_CLOUD_RUN>/webhook/health_push"
 
 curl -X POST "https://health.googleapis.com/v4/projects/fitbit-healt-node/subscribers" \
   -H "Authorization: Bearer $(gcloud auth print-access-token)" \
@@ -184,22 +170,22 @@ curl -X POST "https://health.googleapis.com/v4/projects/fitbit-healt-node/subscr
 ## Estructura del Drive resultante
 
 ```
-FOLDER_SALUD/  (1s2GSGjlxChGy39jUxJFDiijBCWKKg-T5)
+FOLDER_SALUD/  (ID en env var FOLDER_SALUD_ID)
 ├── 00_CONTEXTO_HISTORICO/
 │   ├── BIOMETRIA_MAESTRO.json
-│   ├── ENTRENOS_ALVARO_GOMEZ_RUIZ.csv     ← 140 entrenos agregados
+│   ├── entrenos_historico.csv             ← CSV agregado de Lyfta
 │   ├── PERFIL_ATLETA.md                   ← Generado por DeepSeek-Pro
 │   └── RUTINA_OFICIAL.md                  ← Fuente de verdad del entreno
 ├── 2026/
 │   ├── 05_MAYO/
 │   │   ├── 12_05_2026/ … 31_05_2026/
-│   │   │   ├── 01_LYFTA_RAW/         ← HISTORICO_LYFTA_DD_MM_YYYY.txt + futuros TXT/PDF
-│   │   │   ├── 02_RESUMEN_DIARIO_IA/ ← HTMLs PRE/POST/NOCHE
-│   │   │   ├── 03_MOTOR_IA_LOGS/     ← Logs del motor + errores LLM
-│   │   │   └── 04_HEALTH_RAW/        ← JSON crudos Health API (31 types)
-│   │   ├── HISTORICO_IA_MAYO_2026.txt   ← Memoria mes para la IA
-│   │   └── DIARIO_ALVARO_MAYO_2026.html ← Resumen mes para humano
-│   └── DIARIO_ALVARO_2026.html
+│   │   │   ├── 01_LYFTA_RAW/             ← HISTORICO_LYFTA_DD_MM_YYYY.txt + TXT/PDF nuevos
+│   │   │   ├── 02_RESUMEN_DIARIO_IA/     ← HTMLs PRE / POST / NOCHE
+│   │   │   ├── 03_MOTOR_IA_LOGS/         ← Logs del motor + errores LLM
+│   │   │   └── 04_HEALTH_RAW/            ← JSON crudos Health API (31 data types)
+│   │   ├── HISTORICO_IA_MAYO_2026.txt    ← Memoria del mes para la IA
+│   │   └── DIARIO_<USUARIO>_MAYO_2026.html ← Resumen del mes para humano
+│   └── DIARIO_<USUARIO>_2026.html
 └── 2027/ …
 ```
 
@@ -325,9 +311,9 @@ La carpeta del día (`12_05_2026/02_RESUMEN_DIARIO_IA/`) debería tener al final
 
 ## Estado actual (12-may-2026)
 
-- Revisión activa: `fitbit-node-00064-wvv`
-- `FITBIT_ACTIVO=false` (kill switch activo hasta que llegue la pulsera el 26-may).
-- 140 entrenos históricos cargados (30-sep-2025 → 12-may-2026), uno por carpeta `DD_MM_YYYY/01_LYFTA_RAW/`.
-- `PERFIL_ATLETA.md` v2 generado por `deepseek-v4-pro` (2867 chars).
-- `RUTINA_OFICIAL.md` v1 con triserie de Lateral Raise documentada.
+- Revisión activa en Cloud Run: `fitbit-node-00067-b95`.
+- `FITBIT_ACTIVO=false` (kill switch hasta el enrolado de la pulsera el 26-may-2026).
+- Histórico de entrenos cargado desde Lyfta (uno por carpeta `DD_MM_YYYY/01_LYFTA_RAW/`).
+- `PERFIL_ATLETA.md` generado por `deepseek-v4-pro` desde el CSV agregado.
+- `RUTINA_OFICIAL.md` con la rutina vigente (PUSH/PULL/LEG y triserie de Lateral Raise documentada).
 - Smoke test PRE-ENTRENO verde: fecha correcta, hidratación correcta, sin lista de la compra los días no-domingo.
