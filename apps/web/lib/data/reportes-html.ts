@@ -27,7 +27,10 @@ export type ListReportesHtmlRecentResult =
       readonly message: string;
     };
 
-const reportesSelect = "id,fecha,tipo,nombre_archivo,drive_file_id,html_content,created_at" as const;
+export const reportesHtmlSelectColumns =
+  "id,fecha,tipo,nombre_archivo,drive_file_id,html_content,created_at" as const;
+
+const reportesSelect = reportesHtmlSelectColumns;
 
 /**
  * Últimos informes HTML por fecha descendente (máx. `limit`).

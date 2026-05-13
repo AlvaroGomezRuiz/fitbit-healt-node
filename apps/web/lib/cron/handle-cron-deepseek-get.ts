@@ -4,9 +4,7 @@ import { runDeepSeekCascade } from "@/lib/ai/reexport";
 import { validateCronBearerSecret } from "@/lib/cron/cron-secret";
 import { parseFitbitMasterFromEnv } from "@/lib/fitbit/config";
 
-export type CronDeepSeekFlagEnv =
-  | "CRON_PRE_ENTRENO_DEEPSEEK"
-  | "CRON_RESUMEN_NOCHE_DEEPSEEK";
+export type CronDeepSeekFlagEnv = "CRON_RESUMEN_NOCHE_DEEPSEEK";
 
 interface CronSkippedBody {
   readonly ok: true;

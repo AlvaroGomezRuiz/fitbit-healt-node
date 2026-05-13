@@ -25,8 +25,10 @@ export type ListMemoriaIaRecentResult =
       readonly message: string;
     };
 
-const memoriaSelect =
+export const memoriaIaSelectColumns =
   "id,drive_file_id,source_filename,line_index,event_ts,contenido_linea,created_at" as const;
+
+const memoriaSelect = memoriaIaSelectColumns;
 
 const SHOPPING_KEYWORDS: readonly RegExp[] = [
   /\bcompra\b/i,

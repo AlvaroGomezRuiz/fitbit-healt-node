@@ -6,11 +6,14 @@
  * - `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (migración ignora RLS).
  * - OAuth Drive: `GOOGLE_OAUTH_TOKEN_JSON` (JSON en una línea, o ruta a fichero) o `token.json` en la raíz;
  *   si faltan `client_id`/`client_secret` en el token, usa `secrets/credenciales_oauth.json` (Desktop).
+ *   El flujo de consentimiento en navegador no es automático: hace falta un **refresh_token** válido (p. ej. `scripts/oauth_setup.py` una vez); el script fuerza refresh vía `getAccessToken()` al inicio.
  * - Opcional: `FILE_ID_MAESTRO` para BIOMETRIA_MAESTRO.json; si no, se busca en `00_CONTEXTO_HISTORICO`.
+ * - `--dry-run`: valida OAuth, árbol mínimo en Drive y lectura simple a Supabase **sin** upserts ni Storage.
  *
  * Ejecución (política RTK del workspace):
  *   rtk npm install
- *   rtk npx tsx scripts/migrate_from_drive.ts
+ *   rtk npm run migrate:drive
+ *   rtk npm run migrate:drive -- --dry-run
  *
  * No aplica migraciones SQL: ejecutar antes en Supabase los ficheros en `supabase/migrations/`.
  */
@@ -132,6 +135,76 @@ const InstalledClientSecretsSchema = z.object({
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const DRY_RUN = process.argv.includes("--dry-run");
+
+function extractHttpStatus(err: unknown): number | null {
+  if (!isRecord(err)) {
+    return null;
+  }
+  if (typeof err["status"] === "number") {
+    return err["status"];
+  }
+  const resp = err["response"];
+  if (isRecord(resp) && typeof resp["status"] === "number") {
+    return resp["status"];
+  }
+  return null;
+}
+
+function formatUnknownError(err: unknown): string {
+  if (err instanceof Error) {
+    const st = extractHttpStatus(err);
+    return st !== null ? `HTTP ${st}: ${err.message}` : err.message;
+  }
+  const st = extractHttpStatus(err);
+  const raw = isRecord(err) && typeof err["message"] === "string" ? err["message"] : JSON.stringify(err);
+  return st !== null ? `HTTP ${st}: ${raw}` : raw;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function isRetriableDriveFailure(err: unknown): boolean {
+  const st = extractHttpStatus(err);
+  if (st === 429 || st === 500 || st === 502 || st === 503) {
+    return true;
+  }
+  if (!isRecord(err)) {
+    return false;
+  }
+  const code = err["code"];
+  return code === "ECONNRESET" || code === "ETIMEDOUT" || code === "EAI_AGAIN";
+}
+
+async function withRetries<T>(label: string, op: () => Promise<T>): Promise<T> {
+  const backoffMs = [400, 1200, 3600] as const;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await op();
+    } catch (err: unknown) {
+      const retriable = isRetriableDriveFailure(err);
+      const lastAttempt = attempt >= backoffMs.length;
+      if (!retriable || lastAttempt) {
+        throw new Error(`${label}: ${formatUnknownError(err)}`);
+      }
+      await sleep(backoffMs[attempt] ?? 500);
+    }
+  }
+}
+
+async function ensureAccessToken(oauth2: OAuth2Client): Promise<void> {
+  try {
+    await oauth2.getAccessToken();
+  } catch (err: unknown) {
+    throw new Error(
+      `OAuth Drive: falló getAccessToken (revisa refresh_token, client_id/secret y que el token no esté revocado). ${formatUnknownError(err)}`,
+    );
+  }
 }
 
 function escapeDriveQueryLiteral(value: string): string {
@@ -585,12 +658,14 @@ async function listChildren(
   const out: drive_v3.Schema$File[] = [];
   let pageToken: string | undefined;
   do {
-    const res = await drive.files.list({
-      q,
-      fields: "nextPageToken, files(id, name, mimeType)",
-      pageSize: 1000,
-      pageToken,
-    });
+    const res = await withRetries("drive.files.list", () =>
+      drive.files.list({
+        q,
+        fields: "nextPageToken, files(id, name, mimeType)",
+        pageSize: 1000,
+        pageToken,
+      }),
+    );
     const files = res.data.files;
     if (Array.isArray(files)) {
       out.push(...files);
@@ -605,9 +680,11 @@ function isFolder(f: drive_v3.Schema$File): boolean {
 }
 
 async function downloadText(drive: drive_v3.Drive, fileId: string): Promise<string> {
-  const res = await drive.files.get(
-    { fileId, alt: "media" },
-    { responseType: "text" },
+  const res = await withRetries("drive.files.get(text)", () =>
+    drive.files.get(
+      { fileId, alt: "media" },
+      { responseType: "text" },
+    ),
   );
   if (typeof res.data !== "string") {
     throw new Error(`Descarga texto inesperada para fileId=${fileId}`);
@@ -616,9 +693,11 @@ async function downloadText(drive: drive_v3.Drive, fileId: string): Promise<stri
 }
 
 async function downloadBuffer(drive: drive_v3.Drive, fileId: string): Promise<Buffer> {
-  const res = await drive.files.get(
-    { fileId, alt: "media" },
-    { responseType: "arraybuffer" },
+  const res = await withRetries("drive.files.get(binary)", () =>
+    drive.files.get(
+      { fileId, alt: "media" },
+      { responseType: "arraybuffer" },
+    ),
   );
   const d = res.data;
   if (d instanceof ArrayBuffer) {
@@ -646,10 +725,19 @@ async function findChildFolderId(
 
 async function resolveContextFolder(drive: drive_v3.Drive, rootId: string): Promise<string> {
   const id = await findChildFolderId(drive, rootId, CTX);
-  if (!id) {
-    throw new Error(`No se encontró carpeta ${CTX} bajo FOLDER_SALUD_ID.`);
+  if (id) {
+    return id;
   }
-  return id;
+  const children = await listChildren(drive, rootId);
+  const listing = children
+    .map((c) => {
+      const nm = c.name ?? "?";
+      return c.mimeType === "application/vnd.google-apps.folder" ? `${nm}/` : nm;
+    })
+    .join(", ");
+  throw new Error(
+    `No se encontró la carpeta "${CTX}" bajo FOLDER_SALUD_ID=${rootId}. Contenido visible: ${listing || "(vacío)"}.`,
+  );
 }
 
 async function upsertBiometria(
@@ -1075,8 +1163,11 @@ async function resolveMaestroFileId(
   if (hit?.id) {
     return hit.id;
   }
+  const listing = children
+    .map((c) => (isFolder(c) ? `${c.name ?? "?"}/` : `${c.name ?? "?"}`))
+    .join(", ");
   throw new Error(
-    `No se encontró BIOMETRIA_MAESTRO.json en ${CTX} y ${FILE_ID_MAESTRO_ENV} no está definido.`,
+    `No se encontró BIOMETRIA_MAESTRO.json en ${CTX} y ${FILE_ID_MAESTRO_ENV} no está definido. Archivos/carpetas en contexto: ${listing || "(vacío)"}.`,
   );
 }
 
@@ -1094,11 +1185,46 @@ async function resolveRutinaFileId(drive: drive_v3.Drive, ctxId: string): Promis
   return hit?.id ?? null;
 }
 
+async function runDryRun(
+  drive: drive_v3.Drive,
+  supabase: SupabaseClient,
+  rootId: string,
+): Promise<void> {
+  const ctxId = await resolveContextFolder(drive, rootId);
+  console.log(`[dry-run] ${CTX} id=${ctxId}`);
+  const maestroId = await resolveMaestroFileId(drive, ctxId);
+  console.log(`[dry-run] BIOMETRIA_MAESTRO id=${maestroId} (sin descargar contenido)`);
+  const csvId = await resolveCsvFileId(drive, ctxId);
+  console.log(`[dry-run] CSV ENTRENOS: ${csvId ?? "no encontrado"}`);
+  const rutinaId = await resolveRutinaFileId(drive, ctxId);
+  console.log(`[dry-run] RUTINA_OFICIAL.md: ${rutinaId ?? "no encontrado"}`);
+  const rootChildren = await listChildren(drive, rootId);
+  const years = rootChildren.filter((f) => Boolean(f.id) && isFolder(f) && YEAR_FOLDER_RE.test(f.name ?? ""));
+  console.log(
+    `[dry-run] carpetas de año bajo SALUD: ${years.length} → ${years
+      .map((y) => y.name ?? "")
+      .filter((n) => n.length > 0)
+      .join(", ")}`,
+  );
+  const { error } = await supabase.from("biometria_maestro").select("id").limit(1);
+  if (error) {
+    throw new Error(`Supabase (solo lectura): ${error.message}`);
+  }
+  console.log("[dry-run] Supabase: lectura simple OK.");
+  console.log("[dry-run] Sin upserts ni Storage. Quita --dry-run para migrar de verdad.");
+}
+
 async function main(): Promise<void> {
   const oauth2 = mergeOAuthCredentials();
+  await ensureAccessToken(oauth2);
   const drive = google.drive({ version: "v3", auth: oauth2 });
   const supabase = createSupabase();
   const rootId = requireEnv(FOLDER_SALUD_ENV);
+
+  if (DRY_RUN) {
+    await runDryRun(drive, supabase, rootId);
+    return;
+  }
 
   const ctxId = await resolveContextFolder(drive, rootId);
   console.log(`[ctx] ${CTX} id=${ctxId}`);

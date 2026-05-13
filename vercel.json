@@ -5,12 +5,20 @@
       "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/cron/resumen-noche",
-      "schedule": "0 21 * * *"
+      "path": "/api/cron/pre-entreno",
+      "schedule": "0 8 * * *"
     },
     {
-      "path": "/api/cron/daily-nutrition-routine",
-      "schedule": "50 6 * * *"
+      "path": "/api/cron/fitbit-telemetria-pull",
+      "schedule": "40 6 * * *"
+    },
+    {
+      "path": "/api/cron/fitbit-telemetria-pull",
+      "schedule": "40 7 * * *"
+    },
+    {
+      "path": "/api/cron/resumen-noche",
+      "schedule": "0 21 * * *"
     },
     {
       "path": "/api/cron/daily-nutrition-routine",
