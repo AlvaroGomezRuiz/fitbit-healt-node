@@ -6,9 +6,10 @@ import type { NextConfig } from "next";
 
 const cfgDir = path.dirname(fileURLToPath(import.meta.url));
 
-/** Monorepo root: Next solo carga `.env*` bajo `apps/web`; así `SUPABASE_SERVICE_ROLE_KEY` en la raíz llega a Server Actions. */
+/** Monorepo root + apps/web: primero raíz (compartido), luego `apps/web` (`.env.local` gana en claves repetidas). */
 const monorepoRoot = path.join(cfgDir, "..", "..");
 void loadEnvConfig(monorepoRoot);
+void loadEnvConfig(cfgDir);
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,

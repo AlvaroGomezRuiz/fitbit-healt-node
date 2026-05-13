@@ -1,10 +1,32 @@
 import "server-only";
 
+import { loadEnvConfig } from "@next/env";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import path from "node:path";
 
 import { parsePublicSupabaseEnv } from "@/lib/public-supabase-env";
+
+let didReloadEnvForServiceRole = false;
+
+/**
+ * Si `SUPABASE_SERVICE_ROLE_KEY` no está en el proceso (p. ej. orden de carga con Turbopack),
+ * reintenta cargar `.env*` de la raíz del monorepo y de `apps/web` usando `process.cwd()`.
+ */
+function reloadEnvLayersIfServiceRoleMissing(): void {
+  if (didReloadEnvForServiceRole) {
+    return;
+  }
+  didReloadEnvForServiceRole = true;
+  const raw = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (typeof raw === "string" && raw.trim().length >= 20) {
+    return;
+  }
+  const cwd = process.cwd();
+  void loadEnvConfig(path.join(cwd, "..", ".."));
+  void loadEnvConfig(cwd);
+}
 
 /**
  * Cliente Supabase para RSC / Route Handlers / Server Actions (cookies + anon).
@@ -48,6 +70,7 @@ export async function createSupabaseServerClient(): Promise<
  * Requiere `SUPABASE_SERVICE_ROLE_KEY` en el entorno del servidor (nunca `NEXT_PUBLIC_*` ni bundle cliente).
  */
 export function createSupabaseServiceRoleClient(): SupabaseClient | null {
+  reloadEnvLayersIfServiceRoleMissing();
   const envResult = parsePublicSupabaseEnv(process.env);
   if (!envResult.ok) {
     return null;
