@@ -38,13 +38,10 @@ export async function generateSundayShoppingMarkdown(params: {
     proteinG: row.proteina_g,
     carbosG: row.carbos_g,
     grasaG: row.grasa_g,
-    creatinaG: row.creatina_g,
-    aguaL: row.agua_l,
   });
 
   const userMessage = buildSundayShoppingListUserMessage({
     fecha: params.fechaVista,
-    nombre: row.nombre,
     entrenosHistoricoCompact: params.entrenosHistoricoCompact,
   });
 

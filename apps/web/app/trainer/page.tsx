@@ -42,18 +42,22 @@ export default async function TrainerPage(): Promise<React.ReactElement> {
         <h1 id="trainer-heading" className="text-xl font-semibold tracking-tight text-foreground">
           Entrenador
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Rutina oficial desde Supabase (tabla pequeña) y acciones de servidor para Lyfta.
-        </p>
+        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+          <p>
+            Rutina oficial semanal y pegado de sesión Lyfta: analizar, guardar en historial y, si lo necesitas,
+            resumen con IA.
+          </p>
+          <p>Informes post-entreno recientes e historial de entrenos ya registrados.</p>
+        </div>
       </header>
-
-      <EntrenosHistorialTrainerBlock historial={historial} />
 
       <RutinaPanel result={rutina} />
 
+      <LyftaIngestForm />
+
       <PostEntrenoTrainerBlock reportes={postEntreno} />
 
-      <LyftaIngestForm />
+      <EntrenosHistorialTrainerBlock historial={historial} />
     </section>
   );
 }

@@ -1,35 +1,32 @@
 import { NUTRITION_USER_CONSTRAINTS_ES } from "@/lib/ai/nutrition-diet-prompt";
 
 /**
- * Construye el prompt de sistema para lista de compra del lunes + ideas de platos semanales (calendario Madrid).
- * Salida esperada: markdown con encabezados `##` (nivel 2) para poder mostrar lista arriba y cada día desplegable en la web.
+ * Prompt de sistema: lista de compra semanal + menú por días (Madrid).
+ * El markdown usa encabezados `##` solo como contrato interno para el parser; la UI no muestra MD crudo.
  */
 export function buildSundayShoppingListSystemPrompt(params: {
   readonly kcalTarget: number;
   readonly proteinG: number;
   readonly carbosG: number;
   readonly grasaG: number;
-  readonly creatinaG: number;
-  readonly aguaL: number;
 }): string {
   const macroBlock = [
-    "Objetivos nutricionales diarios de referencia (orientan cantidades y tipos de alimentos en la semana; distribuye en comidas según el contexto familiar):",
-    `- Energía orientativa: ${params.kcalTarget} kcal/día.`,
+    "Objetivos diarios (cantidades y reparto en comidas deben respetarlos):",
+    `- Energía: ${params.kcalTarget} kcal/día.`,
     `- Proteína: ${params.proteinG} g/día.`,
     `- Carbohidratos: ${params.carbosG} g/día.`,
     `- Grasa: ${params.grasaG} g/día.`,
-    `- Creatina (si encaja en el menú): ${params.creatinaG} g/día.`,
-    `- Hidratación orientativa: ${params.aguaL} L/día de líquidos.`,
   ].join("\n");
 
   return [
-    "Eres nutricionista práctico para una familia en España. El padre hace la compra el lunes por la mañana y cocina para toda la familia; busca platos que escalen bien (raciones familiares) y evita repetir el mismo plato principal en días consecutivos.",
-    "Varía ingredientes y estilos de cocina respecto a semanas anteriores cuando el usuario indique semana o fecha (creatividad razonable, sin inventar productos imposibles en un súper medio).",
-    "Responde SIEMPRE en español de España, en markdown.",
-    "Estructura obligatoria: usa encabezados de nivel 2 exactamente así (línea que empiece por `## `), en este orden:",
+    "Eres nutricionista práctico en España. El usuario hace compra semanal y cocina en familia; ingredientes realistas de súper medio; variedad razonable respecto a semanas anteriores si se indica fecha de ancla.",
+    "Salida: español de España, markdown.",
+    "Prohibido en la salida: saludos, despedidas, emojis, narrativa tipo blog, tono familiar/coloquial, mencionar el nombre del usuario, frases como «aquí tienes» o «espero que».",
+    "Sin HTML. Sin tablas salvo imprescindible (prefiere listas).",
+    "",
+    "Estructura obligatoria: encabezados de nivel 2 exactamente en este orden (línea que empiece por `## `):",
     "## Lista de compra",
-    "Debajo: bullet checklist agrupada por zonas del súper (fruta/verdura, frescos, despensa, congelados si aplica). Solo ítems para el menú; cantidades aproximadas cuando ayude.",
-    "A continuación, un bloque por día civil (mismo orden siempre):",
+    "Debajo: solo viñetas (`- `). Agrupa por zonas del súper (fruta/verdura, frescos, despensa, congelados si aplica). Cada ítem con cantidad explícita (g, kg o unidades). Sin prosa entre bloques.",
     "## Lunes",
     "## Martes",
     "## Miércoles",
@@ -37,10 +34,12 @@ export function buildSundayShoppingListSystemPrompt(params: {
     "## Viernes",
     "## Sábado",
     "## Domingo",
-    "En cada día: 2–4 ideas breves (comidas que encajen con las restricciones y el gimnasio por la mañana); platos distintos entre días; proteína principal clara cuando no sea obvia.",
-    "No uses HTML. No uses tablas salvo que sean imprescindibles (mejor listas).",
+    "En cada día: 3–6 líneas máximo. Formato por línea (ejemplo de forma, adapta alimentos reales):",
+    "`200 g pollo · 200 g arroz · 15 g aceite · ~aprox 650 kcal · P 45 g / C 60 g / G 18 g`",
+    "Incluye aporte aproximado (kcal y P/C/G) al menos en una línea-resumen por comida principal si encaja; si no hay datos fiables, omite números pero mantén cantidades de alimentos.",
+    "Plato principal distinto entre días consecutivos cuando sea posible.",
     "",
-    "Restricciones de horario y alimentos (cumplimiento estricto; no sugerir ni listar compra de excluidos):",
+    "Restricciones (cumplimiento estricto; no sugerir ni comprar excluidos):",
     NUTRITION_USER_CONSTRAINTS_ES,
     "",
     macroBlock,
@@ -48,18 +47,16 @@ export function buildSundayShoppingListSystemPrompt(params: {
 }
 
 /**
- * Mensaje usuario para generación de lista + menú (fecha de vista Madrid y contexto de entrenos opcional).
+ * Mensaje usuario para generación de lista + menú (fecha de vista Madrid y entrenos opcional).
  */
 export function buildSundayShoppingListUserMessage(params: {
   readonly fecha: string;
-  readonly nombre: string;
   readonly entrenosHistoricoCompact: string;
 }): string {
   const lines = [
-    "Genera lista de compra para el lunes y menú variado semanal en familia.",
+    "Genera la lista de compra de la semana y el menú por días según el contrato del sistema.",
     "",
-    `Contexto calendario: fecha de vista ${params.fecha} (Europe/Madrid). Usa esa fecha como ancla para variar respecto a otras semanas; la compra sigue orientada al lunes por la mañana en la rutina descrita en el sistema.`,
-    `Nombre en maestro (tono opcional): ${params.nombre}.`,
+    `Fecha ancla (Europe/Madrid): ${params.fecha}. Úsala para variar respecto a otras semanas; no la menciones en la salida.`,
   ];
   const compact = params.entrenosHistoricoCompact.trim();
   if (compact.length > 0) {

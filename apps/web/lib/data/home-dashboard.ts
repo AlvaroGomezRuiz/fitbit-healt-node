@@ -5,7 +5,7 @@ import { addDaysIsoUtc, diaSemanaDbFromMadridIso, todayMadridIso } from "@/lib/d
 import { fetchDiarioPlanIa } from "@/lib/data/diario-plan-ia";
 import { countEntrenosSessionDateGte, fetchUltimaSesionEntreno } from "@/lib/data/entrenos-historico";
 import { listMemoriaIaRecent } from "@/lib/data/memoria-ia";
-import { listReportesHtmlRecent } from "@/lib/data/reportes-html";
+import { fetchReporteHtmlByFechaYTipo, listReportesHtmlRecent } from "@/lib/data/reportes-html";
 import { fetchLatestTelemetriaDiaria } from "@/lib/data/telemetria-diaria";
 import { fetchRutinaOficial } from "@/lib/data/rutina-oficial";
 
@@ -48,6 +48,11 @@ export interface HomeDashboardMeta {
   readonly fechaCivilMadridLegible: string;
 }
 
+export type HomeReporteHoyBlock =
+  | { readonly state: "ok"; readonly data: ReporteHtmlRow }
+  | { readonly state: "empty" }
+  | { readonly state: "error"; readonly message: string };
+
 export interface HomeDashboardPayload {
   readonly meta: HomeDashboardMeta;
   readonly biometria: HomeDataBlock<BiometriaMaestroRow>;
@@ -58,6 +63,8 @@ export interface HomeDashboardPayload {
   readonly diarioPlanHoy: HomeDiarioPlanHoyBlock;
   readonly entrenos7dCount: HomeEntrenos7dCountBlock;
   readonly rutinaHoy: HomeRutinaHoyBlock;
+  readonly preEntrenoHoy: HomeReporteHoyBlock;
+  readonly postEntrenoHoy: HomeReporteHoyBlock;
 }
 
 function buildMetaMadrid(fechaCivilMadrid: string): HomeDashboardMeta {
@@ -80,7 +87,7 @@ export async function fetchHomeDashboard(): Promise<HomeDashboardPayload> {
   const diaDb = diaSemanaDbFromMadridIso(fechaCivilMadrid);
   const meta = buildMetaMadrid(fechaCivilMadrid);
 
-  const [bio, telem, reps, mem, ses, planIa, cnt7d, rutinaList] = await Promise.all([
+  const [bio, telem, reps, mem, ses, planIa, cnt7d, rutinaList, preHoy, postHoy] = await Promise.all([
     fetchBiometriaMaestro(),
     fetchLatestTelemetriaDiaria(),
     listReportesHtmlRecent({ limit: 5 }),
@@ -89,6 +96,8 @@ export async function fetchHomeDashboard(): Promise<HomeDashboardPayload> {
     fetchDiarioPlanIa({ fecha: fechaCivilMadrid }),
     countEntrenosSessionDateGte(desde7d),
     fetchRutinaOficial(),
+    fetchReporteHtmlByFechaYTipo({ fecha: fechaCivilMadrid, tipo: "PRE_ENTRENO" }),
+    fetchReporteHtmlByFechaYTipo({ fecha: fechaCivilMadrid, tipo: "POST_ENTRENO" }),
   ]);
 
   const biometria: HomeDataBlock<BiometriaMaestroRow> =
@@ -149,6 +158,18 @@ export async function fetchHomeDashboard(): Promise<HomeDashboardPayload> {
     return { state: "ok", data: hit };
   })();
 
+  const preEntrenoHoy: HomeReporteHoyBlock = preHoy.ok
+    ? preHoy.row === null
+      ? { state: "empty" }
+      : { state: "ok", data: preHoy.row }
+    : { state: "error", message: preHoy.message };
+
+  const postEntrenoHoy: HomeReporteHoyBlock = postHoy.ok
+    ? postHoy.row === null
+      ? { state: "empty" }
+      : { state: "ok", data: postHoy.row }
+    : { state: "error", message: postHoy.message };
+
   return {
     meta,
     biometria,
@@ -159,5 +180,7 @@ export async function fetchHomeDashboard(): Promise<HomeDashboardPayload> {
     diarioPlanHoy,
     entrenos7dCount,
     rutinaHoy,
+    preEntrenoHoy,
+    postEntrenoHoy,
   };
 }

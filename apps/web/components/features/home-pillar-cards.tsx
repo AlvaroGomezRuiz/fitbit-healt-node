@@ -53,7 +53,7 @@ export function HomePillarCards({ dashboard }: HomePillarCardsProps): React.Reac
           biometria.data.carbos_g,
         )} / G ${formatNumberEs(biometria.data.grasa_g)} g`
       : biometria.state === "empty"
-        ? "Sin biometría maestra visible todavía."
+        ? "Sin perfil personal visible todavía."
         : friendlyQueryMessage(biometria.message);
 
   const coachSesionLine =

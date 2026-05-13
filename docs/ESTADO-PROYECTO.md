@@ -251,7 +251,7 @@ Vercel envía `Authorization: Bearer <CRON_SECRET>`. Sin `CRON_SECRET` configura
 ## 8. Verificación en UI (manual)
 
 - **`/trainer`:** lista `rutina_oficial` si env y RLS correctos; Lyfta: duplicado exacto falla por `UNIQUE (origen, row_fingerprint)` (mensaje en acción).
-- **`/nutrition`:** fecha `?fecha=YYYY-MM-DD`; lista compra desde `memoria_ia` (heurística); plan IA del día si el cron o datos rellenan `diario_plan_ia`; generación semanal automática vía cron domingo (solo lectura en UI).
+- **`/nutrition`:** fecha `?fecha=YYYY-MM-DD`; lista compra desde `memoria_ia` (heurística); plan IA del día si el cron o datos rellenan `diario_plan_ia`; generación semanal automática vía cron domingo (solo lectura en UI). Contrato UI: `NutritionDayPayload` = biometría + shopping + `diario_plan_ia` + `todayMadridIso` (sin telemetría del día en esta ruta; pulsera en `/health`).
 - **`/health`:** con `NEXT_PUBLIC_FITBIT_UI_ENABLED` y maestro Fitbit activo según política de flags.
 
 ---

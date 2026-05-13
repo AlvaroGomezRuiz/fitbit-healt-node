@@ -80,3 +80,22 @@ export function mondayOfWeekMadridIso(isoYmd: string): string {
   const daysSinceMonday = (dow + 6) % 7;
   return addDaysIsoUtc(isoYmd, -daysSinceMonday);
 }
+
+const WEEKDAY_LABEL_ES: readonly string[] = [
+  "Domingo",
+  "Lunes",
+  "Martes",
+  "Miércoles",
+  "Jueves",
+  "Viernes",
+  "Sábado",
+];
+
+/**
+ * Nombre del día civil en español para `isoYmd` en `Europe/Madrid` (alineado con `getJsDayOfWeekMadrid`).
+ */
+export function weekdayLabelEsMadrid(isoYmd: string): string {
+  const idx = getJsDayOfWeekMadrid(isoYmd);
+  const label = WEEKDAY_LABEL_ES[idx];
+  return label ?? "Lunes";
+}

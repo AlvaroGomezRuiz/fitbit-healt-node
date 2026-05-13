@@ -3,6 +3,7 @@ import * as React from "react";
 
 import { textPreviewFromHtml } from "@/lib/data/html-preview";
 import type { HomeDashboardPayload } from "@/lib/data/home-dashboard";
+import { buildMemoriaDisplayEntries } from "@/lib/data/memoria-line-display";
 import { cn } from "@/lib/utils";
 
 import { EmptyNote } from "@/components/features/home/empty-note";
@@ -13,6 +14,9 @@ interface HomeDashboardActividadProps {
 }
 
 export function HomeDashboardActividad({ dashboard }: HomeDashboardActividadProps): React.ReactElement {
+  const memoriaEntries =
+    dashboard.memoriaLines.state === "ok" ? buildMemoriaDisplayEntries(dashboard.memoriaLines.data.slice(0, 4), 200) : [];
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 text-sm text-card-foreground">
       <section aria-labelledby="act-card-title" className="flex flex-col gap-2">
@@ -70,17 +74,21 @@ export function HomeDashboardActividad({ dashboard }: HomeDashboardActividadProp
           Memoria IA (extracto)
         </h2>
         {dashboard.memoriaLines.state === "ok" ? (
-          <ul className="flex flex-col gap-2">
-            {dashboard.memoriaLines.data.slice(0, 4).map((m) => (
-              <li
-                key={m.id}
-                className="rounded-md border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground"
-              >
-                <span className="font-medium text-foreground">{m.source_filename}</span>
-                <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-foreground/90">{m.contenido_linea}</p>
-              </li>
-            ))}
-          </ul>
+          memoriaEntries.length === 0 ? (
+            <EmptyNote>Sin líneas recientes en memoria IA.</EmptyNote>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {memoriaEntries.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="rounded-md border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground"
+                >
+                  <span className="font-medium text-foreground">{entry.sourceShort}</span>
+                  <p className="mt-1 line-clamp-3 text-foreground/90">{entry.line}</p>
+                </li>
+              ))}
+            </ul>
+          )
         ) : dashboard.memoriaLines.state === "empty" ? (
           <EmptyNote>Sin líneas recientes en memoria IA.</EmptyNote>
         ) : (

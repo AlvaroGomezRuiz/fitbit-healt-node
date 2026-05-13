@@ -29,6 +29,13 @@ export default async function HealthPage(): Promise<React.ReactElement> {
         <h1 id="health-heading" className="text-xl font-semibold tracking-tight text-foreground">
           Salud
         </h1>
+        <p className="text-sm text-muted-foreground">
+          Esta sección concentra la telemetría de la pulsera para ver tendencias de actividad, sueño y pasos en un solo
+          lugar.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Sirve como apoyo al entrenamiento y la nutrición; no sustituye el criterio clínico cuando aplique.
+        </p>
         {flags.uiEnabled ? (
           <p className="text-sm text-muted-foreground">
             Telemetría diaria desde Supabase (<span className="font-mono text-foreground">telemetria_diaria</span>).

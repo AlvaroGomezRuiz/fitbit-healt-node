@@ -19,8 +19,8 @@ export function HomeDashboardView({ dashboard }: HomeDashboardViewProps): React.
       <header className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">Inicio</h1>
         <p className="text-sm text-muted-foreground">
-          Resumen en tres pilares (nutrición, entrenador, salud). Los datos salen de Supabase; si falta RLS o env,
-          verás avisos en cada bloque.
+          Resumen en tres pilares: nutrición, entrenador y salud. Usa las pestañas y enlaces para profundizar en cada
+          área.
         </p>
       </header>
       <HomePillarCards dashboard={dashboard} />
