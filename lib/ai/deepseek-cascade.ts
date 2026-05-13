@@ -72,6 +72,53 @@ function shouldAbortCascade(status: number): boolean {
   return false;
 }
 
+const INVALID_DEEPSEEK_API_KEY_USER_MESSAGE =
+  "Clave de API inválida o revocada. Regenera DEEPSEEK_API_KEY en el entorno de apps/web y redespliega.";
+
+function compactResponseTextForDiagnostics(
+  json: unknown | undefined,
+  rawTextSnippet: string | undefined,
+): string {
+  if (rawTextSnippet !== undefined && rawTextSnippet.trim() !== "") {
+    return rawTextSnippet.slice(0, 2000);
+  }
+  if (json === undefined) {
+    return "";
+  }
+  try {
+    return JSON.stringify(json).slice(0, 2000);
+  } catch {
+    return "";
+  }
+}
+
+function bodySuggestsInvalidDeepSeekApiKey(haystackLower: string): boolean {
+  if (haystackLower === "") {
+    return false;
+  }
+  const needles: readonly string[] = [
+    "invalid_api_key",
+    "incorrect api key",
+    "invalid authentication",
+    "authentication failed",
+    "api key is invalid",
+    "invalid bearer token",
+  ];
+  return needles.some((needle) => haystackLower.includes(needle));
+}
+
+function isInvalidDeepSeekApiKeyCase(
+  status: number,
+  json: unknown | undefined,
+  rawTextSnippet: string | undefined,
+): boolean {
+  if (status === 401) {
+    return true;
+  }
+  const haystack = compactResponseTextForDiagnostics(json, rawTextSnippet).toLowerCase();
+  return bodySuggestsInvalidDeepSeekApiKey(haystack);
+}
+
 async function postOnce(params: {
   readonly url: string;
   readonly apiKey: string;
@@ -180,6 +227,9 @@ export async function runDeepSeekCascade(
               ? ""
               : JSON.stringify(json).slice(0, 400);
         if (shouldAbortCascade(status)) {
+          if (isInvalidDeepSeekApiKeyCase(status, json, rawTextSnippet)) {
+            throw new DeepSeekHttpError(INVALID_DEEPSEEK_API_KEY_USER_MESSAGE, status, "");
+          }
           throw new DeepSeekHttpError(`DeepSeek HTTP ${String(status)}: ${snippet}`, status, snippet);
         }
         if (isRetryableStatus(status)) {

@@ -49,6 +49,27 @@ function RutinaPanel({
         </div>
       );
     }
+    if (
+      result.code === "query_error" &&
+      result.message.includes("no es la de la API")
+    ) {
+      return (
+        <div
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-50"
+          role="status"
+        >
+          <p className="font-medium text-amber-900 dark:text-amber-100">
+            URL de proyecto incorrecta
+          </p>
+          <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+            Corrige{" "}
+            <code className="rounded bg-black/10 px-1 font-mono dark:bg-white/15">NEXT_PUBLIC_SUPABASE_URL</code> en{" "}
+            <code className="rounded bg-black/10 px-1 font-mono dark:bg-white/15">apps/web/.env.local</code> o en las
+            variables de entorno del despliegue en Vercel (proyecto web) y vuelve a cargar.
+          </p>
+        </div>
+      );
+    }
     return (
       <div
         className="rounded-lg border border-dashed border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
