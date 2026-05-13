@@ -1,6 +1,5 @@
 import * as React from "react";
 
-import { AiSmokeForm } from "@/components/features/ai-smoke-form";
 import { LyftaIngestForm } from "@/components/features/lyfta-ingest-form";
 import { fetchRutinaOficial } from "@/lib/data/rutina-oficial";
 
@@ -16,16 +15,13 @@ export default async function TrainerPage(): Promise<React.ReactElement> {
           Entrenador
         </h1>
         <p className="text-sm text-muted-foreground">
-          Rutina oficial desde Supabase (tabla pequeña) y acciones de servidor para Lyfta / IA.
+          Rutina oficial desde Supabase (tabla pequeña) y acciones de servidor para Lyfta.
         </p>
       </header>
 
       <RutinaPanel result={rutina} />
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <LyftaIngestForm />
-        <AiSmokeForm />
-      </div>
+      <LyftaIngestForm />
     </section>
   );
 }

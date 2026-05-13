@@ -75,11 +75,17 @@ export function buildPreEntrenoUserMessage(params: {
   readonly ultimoResumenNoche: ReporteHtmlRow | null;
   readonly memoriaTail: readonly MemoriaIaRow[];
   readonly biometria: BiometriaMaestroRow;
+  readonly entrenosHistoricoCompact: string;
 }): string {
   const telemBlock =
     params.telemetriaNochePrev === null
       ? "Sin fila telemetria_diaria para la noche previa (D-1 civil Madrid) o no disponible."
       : `Telemetría noche previa (${params.telemetriaNochePrev.fecha}): ${formatTelemetriaResumen(params.telemetriaNochePrev)}`;
+
+  const entrenoBlock =
+    params.entrenosHistoricoCompact.trim().length === 0
+      ? "Sin bloque de entrenos recientes (vacío)."
+      : params.entrenosHistoricoCompact.trim();
 
   return [
     `Fecha sesión (Europe/Madrid): ${params.fechaMadrid}`,
@@ -92,6 +98,9 @@ export function buildPreEntrenoUserMessage(params: {
     "",
     "=== Memoria IA (cola reciente) ===",
     formatMemoriaLines(params.memoriaTail),
+    "",
+    "=== Entrenos recientes (compacto) ===",
+    entrenoBlock,
     "",
     "=== Biometría maestro ===",
     formatBiometriaContext(params.biometria),

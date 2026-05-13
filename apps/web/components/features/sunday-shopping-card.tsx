@@ -129,9 +129,16 @@ export function SundayShoppingCard({ fecha, biometriaListo }: SundayShoppingCard
     <div className="mt-4 rounded-md border border-border bg-muted/30 p-3 dark:bg-muted/15">
       <h3 className="text-sm font-semibold text-foreground">Lista de compra y menú semanal (IA)</h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        Primero verás la <strong className="text-foreground">lista de compra</strong>; debajo, un desplegable por cada
-        día (Lunes a Domingo). Requiere que la IA siga el formato con encabezados <code className="text-foreground">##</code>.
+        Los domingos por la mañana el cron puede rellenar la semana y guardarla en memoria; aquí puedes forzar un
+        borrador en cualquier momento. Primero verás la <strong className="text-foreground">lista de compra</strong>;
+        debajo, un desplegable por cada día (lunes a domingo). Requiere que la IA siga el formato con encabezados{" "}
+        <code className="text-foreground">##</code>.
       </p>
+      {ui.kind === "idle" ? (
+        <p className="mt-2 text-xs text-muted-foreground" role="status">
+          Sin borrador en esta sesión: usa «Generar con IA» o espera al cron del domingo (memoria_ia).
+        </p>
+      ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" disabled={disabled} onClick={onGenerar}>
           {ui.kind === "loading" ? "Generando…" : "Generar con IA"}

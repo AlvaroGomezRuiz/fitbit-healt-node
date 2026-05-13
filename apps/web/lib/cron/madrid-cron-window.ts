@@ -57,6 +57,10 @@ export const PRE_ENTRENO_DEFAULT_END_EXCLUSIVE_MIN = 9 * 60 + 15;
 export const FITBIT_PULL_DEFAULT_START_MIN = 8 * 60 + 35;
 export const FITBIT_PULL_DEFAULT_END_EXCLUSIVE_MIN = 8 * 60 + 50;
 
+/** Ventana lista compra / menú semanal (domingo ~10:00 Madrid): [09:55, 10:15) civil Madrid. */
+export const NUTRITION_SHOPPING_SUNDAY_DEFAULT_START_MIN = 9 * 60 + 55;
+export const NUTRITION_SHOPPING_SUNDAY_DEFAULT_END_EXCLUSIVE_MIN = 10 * 60 + 15;
+
 function clockToMinutes(hm: string): number | null {
   const clockSchema = z.string().regex(/^\d{2}:\d{2}$/);
   const parsed = clockSchema.safeParse(hm);
@@ -95,6 +99,39 @@ export function readPreEntrenoMadridWindowFromEnv(
   const endExclusiveMin = clockToMinutes(right);
   if (startMin === null || endExclusiveMin === null || startMin >= endExclusiveMin) {
     return { startMin: PRE_ENTRENO_DEFAULT_START_MIN, endExclusiveMin: PRE_ENTRENO_DEFAULT_END_EXCLUSIVE_MIN };
+  }
+  return { startMin, endExclusiveMin };
+}
+
+/**
+ * Lee `CRON_NUTRITION_SHOPPING_WINDOW=HH:MM-HH:MM` (fin exclusivo). Si falta o es inválido, usa defaults §NUTRITION_SHOPPING_SUNDAY_*.
+ */
+export function readNutritionShoppingSundayMadridWindowFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly startMin: number; readonly endExclusiveMin: number } {
+  const raw = env.CRON_NUTRITION_SHOPPING_WINDOW?.trim();
+  if (raw === undefined || raw === "") {
+    return {
+      startMin: NUTRITION_SHOPPING_SUNDAY_DEFAULT_START_MIN,
+      endExclusiveMin: NUTRITION_SHOPPING_SUNDAY_DEFAULT_END_EXCLUSIVE_MIN,
+    };
+  }
+  const halves = raw.split("-");
+  if (halves.length !== 2) {
+    return {
+      startMin: NUTRITION_SHOPPING_SUNDAY_DEFAULT_START_MIN,
+      endExclusiveMin: NUTRITION_SHOPPING_SUNDAY_DEFAULT_END_EXCLUSIVE_MIN,
+    };
+  }
+  const left = halves[0]?.trim() ?? "";
+  const right = halves[1]?.trim() ?? "";
+  const startMin = clockToMinutes(left);
+  const endExclusiveMin = clockToMinutes(right);
+  if (startMin === null || endExclusiveMin === null || startMin >= endExclusiveMin) {
+    return {
+      startMin: NUTRITION_SHOPPING_SUNDAY_DEFAULT_START_MIN,
+      endExclusiveMin: NUTRITION_SHOPPING_SUNDAY_DEFAULT_END_EXCLUSIVE_MIN,
+    };
   }
   return { startMin, endExclusiveMin };
 }

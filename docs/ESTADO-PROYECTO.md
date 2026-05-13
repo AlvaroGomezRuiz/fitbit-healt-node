@@ -31,10 +31,10 @@ No hay carpetas top-level `frontend/` ni `web/`; la UI vive en **`apps/web/`**.
 ## 3. Qué está hecho (verificado en código)
 
 - **Supabase en web:** clientes servidor/anon; `SUPABASE_SERVICE_ROLE_KEY` para operaciones que deben ignorar RLS (cron nutrición, Lyfta según acciones, etc.). Validación estricta de host `NEXT_PUBLIC_SUPABASE_URL` (no URL del dashboard).
-- **Rutas principales:** inicio, `/nutrition` (día Madrid, biometría, telemetría con flag Fitbit, memoria compra, **`diario_plan_ia`** vía `fetchNutritionDay`), `/trainer` (rutina, Lyfta, IA), `/health`, login/callback Supabase.
+- **Rutas principales:** inicio, `/nutrition` (día Madrid, biometría, telemetría con flag Fitbit, memoria compra, **`diario_plan_ia`** vía `fetchNutritionDay`), `/trainer` (rutina, Lyfta), `/health`, login/callback Supabase.
 - **Lyfta:** upsert en `entrenos_historico` con fingerprint; análisis IA opcional.
-- **Nutrición:** prompts y acciones (`nutrition-shopping`, domingo Madrid); datos del plan diario IA desde tabla `diario_plan_ia`.
-- **Cron `daily-nutrition-routine`:** `GET` valida `CRON_SECRET`, flag `CRON_DAILY_NUTRITION_DEEPSEEK`, llama a DeepSeek y hace **upsert** en `diario_plan_ia` (`fecha` Madrid + markdown). **Cron `pre-entreno`:** dos disparos UTC (`0 7` y `0 8`) con **guardia de ventana civil Madrid** `[08:55, 09:15)` (configurable con `CRON_PRE_ENTRENO_WINDOW`); solo dentro de la ventana, con `CRON_PRE_ENTRENO_DEEPSEEK` y datos Supabase, genera HTML y **upsert** en `reportes_html` (`PRE_ENTRENO`, `fecha` = hoy Madrid). **Cron `fitbit-telemetria-pull`:** `40 6` y `40 7` UTC + ventana `[08:35, 08:50)` Madrid; con `FITBIT_ACTIVO` + `FITBIT_INGEST_ENABLED` deja hook TODO hasta cliente de fetch (telemetría previa al pre-entreno). **Cron `resumen-noche`:** `handleCronDeepSeekGet` (requiere `FITBIT_ACTIVO` además de key y flag).
+- **Nutrición:** prompts y acciones (`nutrition-shopping`); datos del plan diario IA desde tabla `diario_plan_ia`.
+- **Cron `daily-nutrition-routine`:** `GET` valida `CRON_SECRET`, flag `CRON_DAILY_NUTRITION_DEEPSEEK`, llama a DeepSeek y hace **upsert** en `diario_plan_ia` (`fecha` Madrid + markdown); el prompt incluye resumen compacto `entrenos_historico`. **Cron `pre-entreno`:** dos disparos UTC (`0 7` y `0 8`) con **guardia de ventana civil Madrid** `[08:55, 09:15)` (configurable con `CRON_PRE_ENTRENO_WINDOW`); solo dentro de la ventana, con `CRON_PRE_ENTRENO_DEEPSEEK` y datos Supabase, genera HTML y **upsert** en `reportes_html` (`PRE_ENTRENO`, `fecha` = hoy Madrid); incluye `entrenos_historico` compacto. **Cron `fitbit-telemetria-pull`:** `40 6` y `40 7` UTC + ventana `[08:35, 08:50)` Madrid; con `FITBIT_ACTIVO` + `FITBIT_INGEST_ENABLED` deja hook TODO hasta cliente de fetch (telemetría previa al pre-entreno). **Cron `resumen-noche`:** `handleCronDeepSeekGet` (requiere `FITBIT_ACTIVO` además de key y flag); el prompt añade `entrenos_historico` compacto. **Cron `nutrition-shopping-weekly`:** dos disparos UTC en **domingo** (`0 8` y `0 9`) con ventana civil Madrid **`[09:55, 10:15)`** (configurable con `CRON_NUTRITION_SHOPPING_WINDOW`); solo si además es **domingo** en `Europe/Madrid`, `CRON_NUTRITION_SHOPPING_DEEPSEEK`, `DEEPSEEK_API_KEY` y `SUPABASE_SERVICE_ROLE_KEY`, genera lista+menú (DeepSeek) y hace **upsert** en `memoria_ia` (clave semanal por lunes Madrid).
 - **IA TS:** `runDeepSeekCascade` en `lib/ai/deepseek-cascade.ts`, reexport en web.
 - **Fitbit / telemetría:** flags centralizados en `parseFitbitFeatureFlagsFromEnv` / maestro `FITBIT_ACTIVO` (`apps/web/lib/fitbit/config.ts`).
 - **Webhook Google Health:** `POST /api/health/google` con `HEALTH_WEBHOOK_SECRET` (cabecera o query según implementación en `route.ts`).
@@ -59,7 +59,7 @@ No hay carpetas top-level `frontend/` ni `web/`; la UI vive en **`apps/web/`**.
 
 - **Supabase:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 - **Sitio:** `NEXT_PUBLIC_SITE_URL` (login/callback).
-- **Crons:** `CRON_SECRET`; `CRON_PRE_ENTRENO_DEEPSEEK`, `CRON_PRE_ENTRENO_WINDOW` (opcional, formato `HH:MM-HH:MM` fin exclusivo; por defecto `08:55-09:15` civil Madrid), `CRON_RESUMEN_NOCHE_DEEPSEEK`, `CRON_DAILY_NUTRITION_DEEPSEEK` (valores tipo `1` / `true` / `yes` / `on`).
+- **Crons:** `CRON_SECRET`; `CRON_PRE_ENTRENO_DEEPSEEK`, `CRON_PRE_ENTRENO_WINDOW` (opcional, formato `HH:MM-HH:MM` fin exclusivo; por defecto `08:55-09:15` civil Madrid), `CRON_RESUMEN_NOCHE_DEEPSEEK`, `CRON_DAILY_NUTRITION_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_WINDOW` (opcional; por defecto `09:55-10:15` civil Madrid, domingo) (valores tipo `1` / `true` / `yes` / `on`).
 - **DeepSeek:** `DEEPSEEK_API_KEY`; opcionales `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL_CASCADE`, `DEEPSEEK_MODEL_COMPLEX`, `DEEPSEEK_MAX_RETRIES`, `DEEPSEEK_BACKOFF_BASE_MS`, `DEEPSEEK_BACKOFF_MAX_MS`, `DEEPSEEK_TIMEOUT_MS`.
 - **Fitbit / telemetría UI:** `FITBIT_ACTIVO`; `NEXT_PUBLIC_FITBIT_UI_ENABLED`, `FITBIT_INGEST_ENABLED`, `FITBIT_SYNC_ENABLED` (comportamiento detallado en `parseFitbitFeatureFlagsFromEnv`).
 - **Webhook salud:** `HEALTH_WEBHOOK_SECRET`.
@@ -80,7 +80,7 @@ Comprueba en el panel de Vercel (Proyecto → Settings → Environment Variables
 
 - **Supabase (app web):** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 - **Sitio / callbacks:** `NEXT_PUBLIC_SITE_URL`
-- **Crons:** `CRON_SECRET`; `CRON_DAILY_NUTRITION_DEEPSEEK`, `CRON_PRE_ENTRENO_DEEPSEEK`, `CRON_PRE_ENTRENO_WINDOW` (opcional), `CRON_RESUMEN_NOCHE_DEEPSEEK`
+- **Crons:** `CRON_SECRET`; `CRON_DAILY_NUTRITION_DEEPSEEK`, `CRON_PRE_ENTRENO_DEEPSEEK`, `CRON_PRE_ENTRENO_WINDOW` (opcional), `CRON_RESUMEN_NOCHE_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_WINDOW` (opcional)
 - **IA:** `DEEPSEEK_API_KEY` (y, si las usas en prod, las opcionales de modelo/cascada listadas arriba en §5)
 - **Fitbit / telemetría (si aplica):** `FITBIT_ACTIVO`, `FITBIT_INGEST_ENABLED`, `FITBIT_SYNC_ENABLED`, `NEXT_PUBLIC_FITBIT_UI_ENABLED`
 - **Webhook salud:** `HEALTH_WEBHOOK_SECRET`
@@ -169,8 +169,19 @@ Vercel programa crons en **UTC**. Para objetivos en **Europe/Madrid** sin duplic
 Solo **una** de las dos coincide cada día civil con la ventana por defecto **`[08:55, 09:15)`** (minutos `08:55` inclusive … `09:15` exclusive). La otra invocación termina en *skip* inmediato: **no hay doble generación** aunque Vercel dispare ambas rutas.
 
 - Ruta: `GET /api/cron/pre-entreno` (`apps/web/app/api/cron/pre-entreno/route.ts`).
-- Tras pasar ventana + `CRON_PRE_ENTRENO_DEEPSEEK`, lee `telemetria_diaria` para **D-1** (noche previa civil Madrid), último `reportes_html` tipo `RESUMEN_NOCHE`, cola `memoria_ia`, `biometria_maestro`; ejecuta `runDeepSeekCascade` y **upsert** `reportes_html` (`PRE_ENTRENO`, `fecha` = hoy Madrid).
+- Tras pasar ventana + `CRON_PRE_ENTRENO_DEEPSEEK`, lee `telemetria_diaria` para **D-1** (noche previa civil Madrid), último `reportes_html` tipo `RESUMEN_NOCHE`, cola `memoria_ia`, resumen compacto `entrenos_historico`, `biometria_maestro`; ejecuta `runDeepSeekCascade` y **upsert** `reportes_html` (`PRE_ENTRENO`, `fecha` = hoy Madrid).
 - **Garantía 09:10:** la ventana llega hasta **09:15** (excl.); el disparo válido cae alrededor de **09:00** local, dejando margen para latencia de red/IA antes del corte operativo 09:10.
+
+### Lista compra + menú semanal (~10:00 domingo Madrid)
+
+| Expresión UTC | Hora local aprox. (domingo) |
+|---------------|---------------------------|
+| `0 8 * * 0` | 08:00 UTC → 09:00 CET / 10:00 CEST en Madrid |
+| `0 9 * * 0` | 09:00 UTC → 10:00 CET / 11:00 CEST en Madrid |
+
+Solo **una** de las dos coincide con la ventana por defecto **`[09:55, 10:15)`** civil Madrid (configurable con `CRON_NUTRITION_SHOPPING_WINDOW`). Fuera de ventana o si no es domingo en Madrid: `skipped` sin DeepSeek. Requiere `CRON_NUTRITION_SHOPPING_DEEPSEEK`, `DEEPSEEK_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, biometría maestra y `CRON_SECRET` (Bearer). Persistencia: **upsert** en `memoria_ia` (`drive_file_id` = `nutrition_sunday_ai_<lunes_ISO>`, `line_index` = 0).
+
+- Ruta: `GET /api/cron/nutrition-shopping-weekly` (`apps/web/app/api/cron/nutrition-shopping-weekly/route.ts`).
 
 ### Pull telemetría previa (opcional, datos frescos)
 
@@ -185,8 +196,9 @@ Ruta: `GET /api/cron/fitbit-telemetria-pull`. Ventana Madrid **`[08:35, 08:50)`*
 
 | Ruta | Horario en repo (UTC) | Notas |
 |------|------------------------|--------|
-| `/api/cron/resumen-noche` | `0 21 * * *` | Stub DeepSeek vía `handleCronDeepSeekGet`; exige `FITBIT_ACTIVO` y flag §5. |
-| `/api/cron/daily-nutrition-routine` | `50 7 * * *` | Un solo cron UTC: equivale a **08:50 hora estándar Madrid (CET, invierno)**. En **CEST (verano)** corre a **09:50** local (±1 h inevitable con un único UTC en Vercel). Dos entradas UTC distintas dispararían **dos veces al día** la misma ruta (doble DeepSeek) salvo lógica adicional; aquí no se duplica. |
+| `/api/cron/resumen-noche` | `0 21 * * *` | Stub DeepSeek vía `handleCronDeepSeekGet`; exige `FITBIT_ACTIVO` y flag §5; prompt incluye resumen `entrenos_historico` si hay `SUPABASE_SERVICE_ROLE_KEY`. |
+| `/api/cron/daily-nutrition-routine` | `50 7 * * *` | Un solo cron UTC: equivale a **08:50 hora estándar Madrid (CET, invierno)**. En **CEST (verano)** corre a **09:50** local (±1 h inevitable con un único UTC en Vercel). Dos entradas UTC distintas dispararían **dos veces al día** la misma ruta (doble DeepSeek) salvo lógica adicional; aquí no se duplica. Incluye bloque compacto `entrenos_historico` en el prompt. |
+| `/api/cron/nutrition-shopping-weekly` | `0 8 * * 0` y `0 9 * * 0` | Lista+menú semanal; ventana Madrid domingo + flag §5; upsert `memoria_ia`. |
 
 Vercel envía `Authorization: Bearer <CRON_SECRET>`. Sin `CRON_SECRET` configurado, las rutas responden *skipped* (`missing_cron_secret_env`) sin llamar a IA ni Supabase de coste alto donde aplica.
 
@@ -195,7 +207,7 @@ Vercel envía `Authorization: Bearer <CRON_SECRET>`. Sin `CRON_SECRET` configura
 ## 8. Verificación en UI (manual)
 
 - **`/trainer`:** lista `rutina_oficial` si env y RLS correctos; Lyfta: duplicado exacto falla por `UNIQUE (origen, row_fingerprint)` (mensaje en acción).
-- **`/nutrition`:** fecha `?fecha=YYYY-MM-DD`; domingo Madrid activa flujo compra; plan IA del día si el cron o datos rellenan `diario_plan_ia`.
+- **`/nutrition`:** fecha `?fecha=YYYY-MM-DD`; lista compra desde `memoria_ia` (heurística); plan IA del día si el cron o datos rellenan `diario_plan_ia`; generación semanal automática vía cron domingo + botón manual.
 - **`/health`:** con `NEXT_PUBLIC_FITBIT_UI_ENABLED` y maestro Fitbit activo según política de flags.
 
 ---

@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { NutritionDayView } from "@/components/features/nutrition-day-view";
-import { isSundayEuropeMadrid, todayMadridIso } from "@/lib/data/date-madrid";
+import { todayMadridIso } from "@/lib/data/date-madrid";
 import { fetchNutritionDay } from "@/lib/data/nutrition-day";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,5 @@ export default async function NutritionPage(props: NutritionPageProps): Promise<
   const sp = props.searchParams !== undefined ? await props.searchParams : {};
   const fecha = parseFecha(sp.fecha);
   const payload = await fetchNutritionDay({ fecha });
-  const isSundayMadrid = isSundayEuropeMadrid(fecha);
-  return <NutritionDayView payload={payload} isSundayMadrid={isSundayMadrid} />;
+  return <NutritionDayView payload={payload} />;
 }

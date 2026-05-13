@@ -23,6 +23,14 @@
     {
       "path": "/api/cron/daily-nutrition-routine",
       "schedule": "50 7 * * *"
+    },
+    {
+      "path": "/api/cron/nutrition-shopping-weekly",
+      "schedule": "0 8 * * 0"
+    },
+    {
+      "path": "/api/cron/nutrition-shopping-weekly",
+      "schedule": "0 9 * * 0"
     }
   ]
 }

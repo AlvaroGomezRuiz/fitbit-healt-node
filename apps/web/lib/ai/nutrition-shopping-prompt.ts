@@ -1,7 +1,7 @@
 import { NUTRITION_USER_CONSTRAINTS_ES } from "@/lib/ai/nutrition-diet-prompt";
 
 /**
- * Construye el prompt de sistema para lista de compra del lunes + ideas de platos semanales (domingo, Madrid).
+ * Construye el prompt de sistema para lista de compra del lunes + ideas de platos semanales (calendario Madrid).
  * Salida esperada: markdown con encabezados `##` (nivel 2) para poder mostrar lista arriba y cada día desplegable en la web.
  */
 export function buildSundayShoppingListSystemPrompt(params: {
@@ -45,4 +45,25 @@ export function buildSundayShoppingListSystemPrompt(params: {
     "",
     macroBlock,
   ].join("\n");
+}
+
+/**
+ * Mensaje usuario para generación de lista + menú (fecha de vista Madrid y contexto de entrenos opcional).
+ */
+export function buildSundayShoppingListUserMessage(params: {
+  readonly fecha: string;
+  readonly nombre: string;
+  readonly entrenosHistoricoCompact: string;
+}): string {
+  const lines = [
+    "Genera lista de compra para el lunes y menú variado semanal en familia.",
+    "",
+    `Contexto calendario: fecha de vista ${params.fecha} (Europe/Madrid). Usa esa fecha como ancla para variar respecto a otras semanas; la compra sigue orientada al lunes por la mañana en la rutina descrita en el sistema.`,
+    `Nombre en maestro (tono opcional): ${params.nombre}.`,
+  ];
+  const compact = params.entrenosHistoricoCompact.trim();
+  if (compact.length > 0) {
+    lines.push("", "=== Entrenos recientes (compacto) ===", compact);
+  }
+  return lines.join("\n");
 }

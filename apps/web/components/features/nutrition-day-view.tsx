@@ -11,10 +11,9 @@ import { NutritionShoppingSunday } from "@/components/features/nutrition-shoppin
 
 interface NutritionDayViewProps {
   readonly payload: NutritionDayPayload;
-  readonly isSundayMadrid: boolean;
 }
 
-export function NutritionDayView({ payload, isSundayMadrid }: NutritionDayViewProps): React.ReactElement {
+export function NutritionDayView({ payload }: NutritionDayViewProps): React.ReactElement {
   const prev = addDaysIsoUtc(payload.fecha, -1);
   const next = addDaysIsoUtc(payload.fecha, 1);
   return (
@@ -41,7 +40,6 @@ export function NutritionDayView({ payload, isSundayMadrid }: NutritionDayViewPr
           </Button>
         </nav>
       </header>
-      {isSundayMadrid ? <NutritionShoppingSunday payload={payload} /> : null}
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
         <h2 className="text-sm font-semibold text-foreground">Objetivos y agua</h2>
         {payload.biometria.state === "ok" ? (
@@ -113,12 +111,7 @@ export function NutritionDayView({ payload, isSundayMadrid }: NutritionDayViewPr
           <EmptyNote>{friendlyQueryMessage(payload.telemetriaDia.message)}</EmptyNote>
         )}
       </div>
-      {!isSundayMadrid ? (
-        <p className="text-xs text-muted-foreground" role="note">
-          El domingo (Europe/Madrid) verás lista de compra para el lunes: generación con IA y, si existen,
-          coincidencias en memoria.
-        </p>
-      ) : null}
+      <NutritionShoppingSunday payload={payload} />
     </section>
   );
 }

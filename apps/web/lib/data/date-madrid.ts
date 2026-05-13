@@ -70,3 +70,13 @@ export function addDaysIsoUtc(isoYmd: string, delta: number): string {
   const dt = new Date(Date.UTC(y, m - 1, day + delta));
   return dt.toISOString().slice(0, 10);
 }
+
+/**
+ * Lunes civil de la semana que contiene `isoYmd` (Europe/Madrid), como `YYYY-MM-DD`.
+ * Útil para claves idempotentes semanales (p. ej. lista de compra del lunes).
+ */
+export function mondayOfWeekMadridIso(isoYmd: string): string {
+  const dow = getJsDayOfWeekMadrid(isoYmd);
+  const daysSinceMonday = (dow + 6) % 7;
+  return addDaysIsoUtc(isoYmd, -daysSinceMonday);
+}

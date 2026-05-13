@@ -17,11 +17,13 @@ export function NutritionShoppingSunday({ payload }: NutritionShoppingSundayProp
       aria-labelledby="shopping-sunday-title"
     >
       <h2 id="shopping-sunday-title" className="text-base font-semibold tracking-tight text-foreground">
-        Lista de compra (domingo → lunes)
+        Lista de compra y menú semanal
       </h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        El lunes por la mañana suele hacerse la compra: puedes generar con IA menú variado y lista. Abajo,
-        notas detectadas en `memoria_ia` (compra, lista, súper).
+        Este bloque se muestra siempre al final de la vista. La lista y menú se generan automáticamente los domingos
+        (~10:00 Madrid, cron + `CRON_NUTRITION_SHOPPING_DEEPSEEK`) y se guardan en `memoria_ia`; también puedes
+        pulsar «Generar con IA» para un borrador inmediato. Abajo, notas detectadas en `memoria_ia` (compra, lista,
+        súper) cuando existan.
       </p>
       <SundayShoppingCard
         fecha={payload.fecha}
@@ -39,7 +41,10 @@ export function NutritionShoppingSunday({ payload }: NutritionShoppingSundayProp
             ))}
           </ol>
         ) : payload.shoppingLines.state === "empty" ? (
-          <EmptyNote>No hay líneas candidatas para lista de compra en memoria reciente.</EmptyNote>
+          <EmptyNote>
+            No hay líneas candidatas en memoria reciente para esta fecha. Prueba «Generar con IA» arriba o navega
+            a días donde ya hubieras guardado notas de compra (p. ej. la última semana).
+          </EmptyNote>
         ) : (
           <EmptyNote>{friendlyQueryMessage(payload.shoppingLines.message)}</EmptyNote>
         )}

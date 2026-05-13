@@ -49,6 +49,7 @@ export function buildNutritionDailyRoutineUserMessage(params: {
   readonly diaSemanaEtiqueta: string;
   readonly rutina: RutinaOficialDiaDetail | null;
   readonly telemetriaAyer: TelemetriaDiariaRow | null;
+  readonly entrenosHistoricoCompact: string;
 }): string {
   const rutinaBlock =
     params.rutina === null
@@ -67,6 +68,11 @@ export function buildNutritionDailyRoutineUserMessage(params: {
       ? "Sin telemetría de pulsera registrada para ayer (o no disponible)."
       : `Resumen telemetría ayer (${params.telemetriaAyer.fecha}): ${formatTelemetriaResumen(params.telemetriaAyer)}`;
 
+  const entrenoBlock =
+    params.entrenosHistoricoCompact.trim().length === 0
+      ? "Sin bloque de entrenos recientes (vacío)."
+      : params.entrenosHistoricoCompact.trim();
+
   return [
     `Fecha plan (Europe/Madrid): ${params.fechaMadrid}`,
     `Día de la semana (enum DB): ${params.diaSemanaEtiqueta}`,
@@ -76,5 +82,8 @@ export function buildNutritionDailyRoutineUserMessage(params: {
     "",
     "=== Contexto recuperación ===",
     telemBlock,
+    "",
+    "=== Entrenos recientes (compacto) ===",
+    entrenoBlock,
   ].join("\n");
 }

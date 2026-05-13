@@ -9,6 +9,7 @@ import {
   readPreEntrenoMadridWindowFromEnv,
 } from "@/lib/cron/madrid-cron-window";
 import { biometriaMaestroRowSchema, biometriaSelect } from "@/lib/data/biometria-maestro";
+import { buildEntrenosHistoricoContextForPrompt } from "@/lib/data/build-entrenos-historico-context";
 import { addDaysIsoUtc, todayMadridIso } from "@/lib/data/date-madrid";
 import { type MemoriaIaRow, memoriaIaRowSchema, memoriaIaSelectColumns } from "@/lib/data/memoria-ia";
 import { reporteHtmlRowSchema, reportesHtmlSelectColumns } from "@/lib/data/reportes-html";
@@ -164,6 +165,12 @@ export async function GET(request: Request): Promise<
     }
   }
 
+  const entrenosHistoricoCompact = await buildEntrenosHistoricoContextForPrompt({
+    supabase,
+    maxSessions: 10,
+    maxChars: 2000,
+  });
+
   const systemPrompt = buildPreEntrenoSystemPrompt();
   const userMessage = buildPreEntrenoUserMessage({
     fechaMadrid: fecha,
@@ -171,6 +178,7 @@ export async function GET(request: Request): Promise<
     ultimoResumenNoche,
     memoriaTail,
     biometria: bio,
+    entrenosHistoricoCompact,
   });
 
   let result: { text: string; modelUsed: string; attempts: number };

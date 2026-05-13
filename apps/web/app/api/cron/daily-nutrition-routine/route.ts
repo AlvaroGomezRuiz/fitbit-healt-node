@@ -7,6 +7,7 @@ import {
 import { runDeepSeekCascade } from "@/lib/ai/reexport";
 import { validateCronBearerSecret } from "@/lib/cron/cron-secret";
 import { biometriaMaestroRowSchema, biometriaSelect } from "@/lib/data/biometria-maestro";
+import { buildEntrenosHistoricoContextForPrompt } from "@/lib/data/build-entrenos-historico-context";
 import { addDaysIsoUtc, diaSemanaDbFromMadridIso, todayMadridIso } from "@/lib/data/date-madrid";
 import type { DiaSemanaDb } from "@/lib/data/rutina-oficial";
 import { fetchRutinaOficialDetailByDia } from "@/lib/data/rutina-oficial";
@@ -118,6 +119,12 @@ export async function GET(request: Request): Promise<
   const teleAyer =
     teleAyerParsed !== null && teleAyerParsed.success ? teleAyerParsed.data : null;
 
+  const entrenosHistoricoCompact = await buildEntrenosHistoricoContextForPrompt({
+    supabase,
+    maxSessions: 10,
+    maxChars: 2000,
+  });
+
   const systemPrompt = buildNutritionDailyRoutineSystemPrompt({
     kcalTarget: bio.kcal_target,
     proteinG: bio.proteina_g,
@@ -132,6 +139,7 @@ export async function GET(request: Request): Promise<
     diaSemanaEtiqueta: diaMadrid,
     rutina: rutina.row,
     telemetriaAyer: teleAyer,
+    entrenosHistoricoCompact,
   });
 
   let result: { text: string; modelUsed: string; attempts: number };
