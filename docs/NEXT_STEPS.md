@@ -14,7 +14,8 @@
 2. **apps/web**: copia `apps/web/.env.example` → `apps/web/.env.local` con:
    - `NEXT_PUBLIC_SUPABASE_URL` (misma URL del proyecto)
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clave anon del dashboard; **no** uses service role en `NEXT_PUBLIC_*` ni en el cliente)
-3. Opcional — Server Action de IA en web: añade `DEEPSEEK_API_KEY` (y opcionalmente `DEEPSEEK_BASE_URL`) en `apps/web/.env.local`. Next no carga automáticamente el `.env` de la raíz al ejecutar `next dev` dentro de `apps/web`.
+   - **Recomendado para pegar Lyfta / escrituras sin depender de políticas `anon`:** `SUPABASE_SERVICE_ROLE_KEY` en el entorno **del servidor** de `apps/web` (`.env.local` del paquete web o variables del proyecto en Vercel). Misma variable que en el `.env` de la raíz para scripts; `apps/web/next.config.ts` fusiona el `.env` del monorepo para que esa clave sea visible en Server Actions al desarrollar.
+3. Opcional — Server Action de IA en web: añade `DEEPSEEK_API_KEY` (y opcionalmente `DEEPSEEK_BASE_URL`) en `apps/web/.env.local`.
 
 ## 3. Comandos útiles (con RTK)
 

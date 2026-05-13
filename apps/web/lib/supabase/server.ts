@@ -52,8 +52,9 @@ export function createSupabaseServiceRoleClient(): SupabaseClient | null {
   if (!envResult.ok) {
     return null;
   }
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (typeof serviceKey !== "string" || serviceKey.length < 20) {
+  const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = typeof rawKey === "string" ? rawKey.trim() : "";
+  if (serviceKey.length < 20) {
     return null;
   }
   return createClient(envResult.env.NEXT_PUBLIC_SUPABASE_URL, serviceKey, {

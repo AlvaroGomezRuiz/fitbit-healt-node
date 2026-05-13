@@ -61,7 +61,10 @@ const biometriaSelect =
   "id,nombre,fecha_nacimiento,edad_anos,sexo,altura_cm,peso_kg,fecha_ultimo_pesaje,imc,body_fat_estimado_pct,masa_libre_grasa_kg,tendencia_peso_7dias_kg,objetivo_tipo,kcal_target,proteina_g,grasa_g,carbos_g,creatina_g,agua_l,fecha_ultimo_recalculo,hrv_baseline_7d,peso_baseline_2sem,ultimo_top_set_squat,ultimo_top_set_press,bandera_roja,motivo_bandera_roja,ultimo_chequeo,memoria_corta_7dias,drive_file_id,updated_at" as const;
 
 /**
- * Lee la fila única `biometria_maestro` (singleton). Requiere RLS que permita lectura (p. ej. sesión autenticada).
+ * Lee la fila única `biometria_maestro` (singleton).
+ * Con RLS y JWT anon sin política SELECT, PostgREST suele devolver 0 filas sin error: entonces `row: null`
+ * no distingue “no hay datos” de “hay datos pero no visibles”. La migración
+ * `anon_select_biometria_maestro_singleton` alinea el comportamiento con `telemetria_diaria` (lectura portada/nutrición).
  */
 export async function fetchBiometriaMaestro(): Promise<FetchBiometriaMaestroResult> {
   const supabase = await createSupabaseServerClient();

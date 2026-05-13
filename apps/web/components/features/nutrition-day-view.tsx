@@ -61,7 +61,10 @@ export function NutritionDayView({ payload, isSundayMadrid }: NutritionDayViewPr
             <li className="text-right font-medium">{payload.biometria.data.fecha_ultimo_recalculo}</li>
           </ul>
         ) : payload.biometria.state === "empty" ? (
-          <EmptyNote>No hay `biometria_maestro` para mostrar objetivos.</EmptyNote>
+          <EmptyNote>
+            Sin biometría maestra visible. Si la fila existe en Supabase pero no aquí, revisa RLS anon SELECT al
+            singleton o inicia sesión.
+          </EmptyNote>
         ) : (
           <EmptyNote>{friendlyQueryMessage(payload.biometria.message)}</EmptyNote>
         )}

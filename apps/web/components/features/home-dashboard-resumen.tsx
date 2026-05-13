@@ -37,7 +37,10 @@ export function HomeDashboardResumen({ dashboard }: HomeDashboardResumenProps): 
             </li>
           </ul>
         ) : dashboard.biometria.state === "empty" ? (
-          <EmptyNote>No hay fila en `biometria_maestro` (o aún no migraste el JSON maestro).</EmptyNote>
+          <EmptyNote>
+            Sin biometría maestra visible. Si la fila existe en Supabase pero no aquí, suele ser RLS con clave anon
+            sin SELECT (migración `anon_select_biometria_maestro_singleton`) o sesión no autenticada.
+          </EmptyNote>
         ) : (
           <EmptyNote>{friendlyQueryMessage(dashboard.biometria.message)}</EmptyNote>
         )}

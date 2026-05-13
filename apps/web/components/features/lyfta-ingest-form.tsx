@@ -61,8 +61,10 @@ function LyftaFeedback({ state }: { readonly state: LyftaIngestState }): React.R
           <li>Título: {state.structured.sessionTitle}</li>
           <li>Fecha sesión: {state.structured.sessionDate}</li>
           <li>Líneas: {state.structured.lineCount}</li>
-          <li>Fingerprint: {state.structured.rowFingerprint.slice(0, 16)}…</li>
-          {state.status === "success" ? <li>Id insertado: {state.insertedId}</li> : null}
+          <li className="list-none pl-0 text-[0.7rem] leading-snug text-muted-foreground/90">
+            Identificador interno para no duplicar el mismo pegado (no hace falta copiarlo ni memorizarlo).
+          </li>
+          {state.status === "success" ? <li>Id guardado: {state.insertedId}</li> : null}
         </ul>
       ) : null}
     </div>
