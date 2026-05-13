@@ -1,0 +1,27 @@
+{
+  "name": "fitbit-healt-node",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate:drive": "tsx scripts/migrate_from_drive.ts",
+    "smoke:deepseek": "tsx scripts/smoke_deepseek.ts",
+    "typecheck:scripts": "tsc --noEmit -p tsconfig.json",
+    "typecheck:web": "tsc --noEmit -p apps/web/tsconfig.json",
+    "web:dev": "npm --prefix apps/web run dev",
+    "web:build": "npm --prefix apps/web run build",
+    "web:install": "npm --prefix apps/web install"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.8",
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.5.0",
+    "google-auth-library": "^9.15.1",
+    "googleapis": "^148.0.0",
+    "zod": "^3.24.4"
+  }
+}

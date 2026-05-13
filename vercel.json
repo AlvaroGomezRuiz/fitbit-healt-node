@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/pre-entreno",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/resumen-noche",
+      "schedule": "0 21 * * *"
+    }
+  ]
+}

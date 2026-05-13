@@ -1,3 +1,7 @@
+# ── Node (scripts TS en raíz + tooling) ───────────────────────────────
+node_modules/
+dist-scripts/
+
 # ── Python environment ────────────────────────────────────────────────
 venv/
 .venv/
@@ -24,6 +28,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+APIS-CONTRASEÑAS.md
+APIS-CONTRASE*.md
 credenciales_oauth.json
 token.json
 *.token.json
@@ -36,3 +42,8 @@ secrets/
 RUTINA/
 payments/
 debug_drive/
+
+# ── Cursor IDE ───────────────────────────────────────
+.cursorignore
+.cursorrules
+.cursor/

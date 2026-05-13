@@ -13,6 +13,12 @@ URL de producción: la que devuelva `gcloud run deploy` al final del despliegue 
 
 ---
 
+## App web (fase 3, mock)
+
+Cáscara **Next.js** en `apps/web` (App Router, Tailwind, componentes estilo shadcn). Contenido estático hasta integrar Supabase (fase 1) y DeepSeek (fase 2). Detalle: [docs/phase3-shell.md](docs/phase3-shell.md).
+
+---
+
 ## Contenido del repositorio
 
 ```
@@ -23,6 +29,8 @@ Dockerfile              Build de la imagen de Cloud Run
 README.md               Este documento
 requirements.txt        Dependencias Python
 RUTINA_OFICIAL.md       Rutina vigente (PUSH/PULL/LEG, fuente de verdad para el LLM)
+apps/web/               Next.js — cáscara UI fase 3 (mock, ver docs/phase3-shell.md)
+docs/                   Documentación auxiliar del repo
 scripts/                Bootstrap, deploy y herramientas de operación
 src/                    Código de la aplicación (FastAPI + engines)
 ```

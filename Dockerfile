@@ -17,8 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
 
-# El CSV histórico de 148 entrenos se sube UNA vez con scripts/seed_drive.py
-# desde local. El contenedor lo lee desde Drive vía descargar_csv_contexto(),
+# El CSV histórico se sube desde local (p. ej. scripts/actualizar_contexto_drive.py).
+# El contenedor lo lee desde Drive vía descargar_csv_contexto(),
 # por eso NO se empaqueta dentro de la imagen.
 
 RUN useradd -m appuser && chown -R appuser:appuser /app
