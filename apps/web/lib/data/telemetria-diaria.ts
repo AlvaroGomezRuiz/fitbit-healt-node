@@ -58,7 +58,7 @@ export type ListTelemetriaDiariaResult =
       readonly message: string;
     };
 
-const telemetriaSelectColumns =
+export const telemetriaDiariaSelectColumns =
   "fecha,pulsera_activa,generado_en,sueno_horas,sueno_eficiencia,sueno_rem_min,sueno_profundo_min,hrv_diario,frecuencia_reposo_bpm,spo2_promedio_pct,pasos,calorias_total,active_zone_min,vo2_max,peso_actual_kg,resumen_critico,snapshot_completo,drive_json_file_id,updated_at" as const;
 
 /**
@@ -117,7 +117,7 @@ export async function listTelemetriaDiaria(params: {
 
     const { data, error } = await supabase
       .from("telemetria_diaria")
-      .select(telemetriaSelectColumns)
+      .select(telemetriaDiariaSelectColumns)
       .gte("fecha", desde)
       .lte("fecha", hasta)
       .order("fecha", { ascending: false });
@@ -200,7 +200,7 @@ export async function fetchLatestTelemetriaDiaria(): Promise<FetchLatestTelemetr
   try {
     const { data, error } = await supabase
       .from("telemetria_diaria")
-      .select(telemetriaSelectColumns)
+      .select(telemetriaDiariaSelectColumns)
       .order("fecha", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -258,7 +258,7 @@ export async function fetchTelemetriaDiariaByFecha(params: {
   try {
     const { data, error } = await supabase
       .from("telemetria_diaria")
-      .select(telemetriaSelectColumns)
+      .select(telemetriaDiariaSelectColumns)
       .eq("fecha", params.fecha)
       .maybeSingle();
     if (error !== null) {

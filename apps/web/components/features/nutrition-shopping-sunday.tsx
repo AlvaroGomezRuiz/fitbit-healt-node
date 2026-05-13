@@ -4,6 +4,7 @@ import type { NutritionDayPayload } from "@/lib/data/nutrition-day";
 
 import { EmptyNote } from "@/components/features/home/empty-note";
 import { friendlyQueryMessage } from "@/components/features/home/query-message";
+import { SundayShoppingCard } from "@/components/features/sunday-shopping-card";
 
 interface NutritionShoppingSundayProps {
   readonly payload: NutritionDayPayload;
@@ -16,12 +17,16 @@ export function NutritionShoppingSunday({ payload }: NutritionShoppingSundayProp
       aria-labelledby="shopping-sunday-title"
     >
       <h2 id="shopping-sunday-title" className="text-base font-semibold tracking-tight text-foreground">
-        Lista de compra (domingo)
+        Lista de compra (domingo → lunes)
       </h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Coincidencias en `memoria_ia` (palabras clave: compra, lista, supermercado, mercado). Sin coincidencias
-        no inventamos ítems.
+        El lunes por la mañana suele hacerse la compra: puedes generar con IA menú variado y lista. Abajo,
+        notas detectadas en `memoria_ia` (compra, lista, súper).
       </p>
+      <SundayShoppingCard
+        fecha={payload.fecha}
+        biometriaListo={payload.biometria.state === "ok"}
+      />
       <div className="mt-3 flex flex-col gap-2">
         {payload.shoppingLines.state === "ok" ? (
           <ol className="list-decimal space-y-2 pl-4 text-sm text-foreground">

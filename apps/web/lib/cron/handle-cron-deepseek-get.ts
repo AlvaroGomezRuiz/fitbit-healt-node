@@ -1,8 +1,7 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { NextResponse } from "next/server";
 
 import { runDeepSeekCascade } from "@/lib/ai/reexport";
+import { validateCronBearerSecret } from "@/lib/cron/cron-secret";
 import { parseFitbitMasterFromEnv } from "@/lib/fitbit/config";
 
 export type CronDeepSeekFlagEnv =
@@ -26,33 +25,6 @@ interface CronDeepSeekErrorBody {
   readonly error: "deepseek_failed";
 }
 
-function extractBearerToken(request: Request): string | undefined {
-  const raw = request.headers.get("authorization");
-  if (raw === null) {
-    return undefined;
-  }
-  const trimmed = raw.trim();
-  const prefix = "Bearer ";
-  if (!trimmed.toLowerCase().startsWith(prefix.toLowerCase())) {
-    return undefined;
-  }
-  const token = trimmed.slice(prefix.length).trim();
-  return token === "" ? undefined : token;
-}
-
-function safeEqualString(a: string, b: string): boolean {
-  try {
-    const ba = Buffer.from(a, "utf8");
-    const bb = Buffer.from(b, "utf8");
-    if (ba.length !== bb.length) {
-      return false;
-    }
-    return timingSafeEqual(ba, bb);
-  } catch {
-    return false;
-  }
-}
-
 function isTruthyEnvFlag(value: string | undefined): boolean {
   if (value === undefined) {
     return false;
@@ -70,15 +42,12 @@ export async function handleCronDeepSeekGet(params: {
   readonly aiFlagEnv: CronDeepSeekFlagEnv;
   readonly prompt: string;
 }): Promise<NextResponse<CronSkippedBody | CronRanBody | CronDeepSeekErrorBody | { readonly error: string }>> {
-  const cronSecret = process.env.CRON_SECRET;
-  const cronSecretTrimmed = cronSecret?.trim() ?? "";
-  if (cronSecretTrimmed === "") {
+  const auth = validateCronBearerSecret(params.request);
+  if (auth.kind === "missing_cron_secret_env") {
     const body: CronSkippedBody = { ok: true, skipped: "missing_cron_secret_env" };
     return NextResponse.json(body);
   }
-
-  const token = extractBearerToken(params.request);
-  if (token === undefined || !safeEqualString(token, cronSecretTrimmed)) {
+  if (auth.kind === "unauthorized") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

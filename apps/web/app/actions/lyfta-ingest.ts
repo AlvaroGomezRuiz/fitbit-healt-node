@@ -219,6 +219,7 @@ export async function ingestLyftaAction(
         "Listo: sesión guardada en el historial. Si pegaste el mismo texto otra vez, se actualizó el mismo registro (sin duplicar).",
       structured,
       insertedId: id,
+      textPreview: normalized.slice(0, 4000),
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Error desconocido al insertar.";

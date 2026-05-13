@@ -29,6 +29,24 @@ export function getJsDayOfWeekMadrid(isoYmd: string): number {
   return typeof n === "number" ? n : 0;
 }
 
+/** `true` si `isoYmd` es domingo en calendario civil Europe/Madrid. */
+export function isSundayEuropeMadrid(isoYmd: string): boolean {
+  return getJsDayOfWeekMadrid(isoYmd) === 0;
+}
+
+const JS_WEEKDAY_TO_DIA = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"] as const;
+
+type DiaSemanaFromMadrid = (typeof JS_WEEKDAY_TO_DIA)[number];
+
+/**
+ * Mapea `getJsDayOfWeekMadrid` (0=domingo) a valor enum `public.dia_semana` en Postgres.
+ */
+export function diaSemanaDbFromMadridIso(isoYmd: string): DiaSemanaFromMadrid {
+  const idx = getJsDayOfWeekMadrid(isoYmd);
+  const v = JS_WEEKDAY_TO_DIA[idx];
+  return v ?? "MON";
+}
+
 /**
  * Suma días en calendario UTC sobre `YYYY-MM-DD` (navegación estable entre pestañas).
  */

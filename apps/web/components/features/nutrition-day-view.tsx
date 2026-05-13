@@ -70,6 +70,23 @@ export function NutritionDayView({ payload, isSundayMadrid }: NutritionDayViewPr
         )}
       </div>
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+        <h2 className="text-sm font-semibold text-foreground">Plan del día (IA)</h2>
+        {payload.diarioPlanIa.state === "ok" ? (
+          <div
+            className="max-h-[min(70vh,720px)] overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-foreground"
+            role="article"
+          >
+            {payload.diarioPlanIa.data.markdown}
+          </div>
+        ) : payload.diarioPlanIa.state === "empty" ? (
+          <p className="text-sm text-muted-foreground">
+            El plan del día se genera sobre las 8:50 (ver cron).
+          </p>
+        ) : (
+          <EmptyNote>{friendlyQueryMessage(payload.diarioPlanIa.message)}</EmptyNote>
+        )}
+      </div>
+      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
         <h2 className="text-sm font-semibold text-foreground">Telemetría del día</h2>
         {payload.telemetriaDia.state === "ok" ? (
           <ul className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
@@ -98,8 +115,8 @@ export function NutritionDayView({ payload, isSundayMadrid }: NutritionDayViewPr
       </div>
       {!isSundayMadrid ? (
         <p className="text-xs text-muted-foreground" role="note">
-          El domingo (zona Europe/Madrid) mostramos un bloque destacado de lista de compra si hay coincidencias
-          en memoria.
+          El domingo (Europe/Madrid) verás lista de compra para el lunes: generación con IA y, si existen,
+          coincidencias en memoria.
         </p>
       ) : null}
     </section>

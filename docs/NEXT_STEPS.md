@@ -16,6 +16,7 @@
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clave anon del dashboard; **no** uses service role en `NEXT_PUBLIC_*` ni en el cliente)
    - **Recomendado para pegar Lyfta / escrituras sin depender de políticas `anon`:** `SUPABASE_SERVICE_ROLE_KEY` en el entorno **del servidor** de `apps/web` (`.env.local` del paquete web o variables del proyecto en Vercel). Misma variable que en el `.env` de la raíz para scripts; `apps/web/next.config.ts` fusiona el `.env` del monorepo para que esa clave sea visible en Server Actions al desarrollar.
 3. Opcional — Server Action de IA en web: añade `DEEPSEEK_API_KEY` (y opcionalmente `DEEPSEEK_BASE_URL`) en `apps/web/.env.local`.
+4. **Nutrición / dieta con IA (pendiente de wiring):** `apps/web/lib/ai/nutrition-diet-prompt.ts` exporta restricciones fijas y `buildNutritionDietSystemPrompt`; los números deben inyectarse desde `biometria_maestro` (`kcal_target`, `proteina_g`, `carbos_g`, `grasa_g`, `creatina_g`, `agua_l`).
 
 ## 3. Comandos útiles (con RTK)
 

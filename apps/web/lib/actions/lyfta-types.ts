@@ -12,6 +12,8 @@ export type LyftaIngestState =
       readonly message: string;
       readonly structured: LyftaStructuredPreview;
       readonly insertedId: string;
+      /** Recorte alineado a `raw_payload.text_preview` en BD (sin segunda consulta). */
+      readonly textPreview: string;
     }
   | {
       readonly status: "stub";
