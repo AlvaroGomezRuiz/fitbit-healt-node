@@ -1,3 +1,6 @@
+import "server-only";
+
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
@@ -35,6 +38,28 @@ export async function createSupabaseServerClient(): Promise<
           /* set desde RSC puro puede fallar; ignorar */
         }
       },
+    },
+  });
+}
+
+/**
+ * Cliente PostgREST con JWT `service_role`: **omite RLS** en Supabase.
+ * Usar solo en Server Actions / Route Handlers de confianza.
+ * Requiere `SUPABASE_SERVICE_ROLE_KEY` en el entorno del servidor (nunca `NEXT_PUBLIC_*` ni bundle cliente).
+ */
+export function createSupabaseServiceRoleClient(): SupabaseClient | null {
+  const envResult = parsePublicSupabaseEnv(process.env);
+  if (!envResult.ok) {
+    return null;
+  }
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (typeof serviceKey !== "string" || serviceKey.length < 20) {
+    return null;
+  }
+  return createClient(envResult.env.NEXT_PUBLIC_SUPABASE_URL, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
     },
   });
 }

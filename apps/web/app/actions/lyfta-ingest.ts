@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type { LyftaIngestState, LyftaStructuredPreview } from "@/lib/actions/lyfta-types";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient, createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 const ingestInputSchema = z.object({
   rawText: z.string().trim().min(1, "Pega al menos una línea de Lyfta.").max(200_000),
@@ -59,7 +59,8 @@ export async function ingestLyftaAction(
   }
   const rawText = parsedInput.data.rawText;
   const structured = buildStructured(rawText);
-  const supabase = await createSupabaseServerClient();
+  /** Preferir service_role aquí: el pegado Lyfta debe persistir aunque falte la política RLS `anon_insert_*` en el proyecto remoto. */
+  const supabase = createSupabaseServiceRoleClient() ?? (await createSupabaseServerClient());
   if (supabase === null) {
     return {
       status: "stub",
