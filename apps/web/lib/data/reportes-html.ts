@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { publicSupabaseQueryFailureMessage } from "@/lib/supabase/public-query-error-message";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const reporteHtmlTipoSchema = z.enum(["PRE_ENTRENO", "POST_ENTRENO", "RESUMEN_NOCHE"]);
@@ -51,7 +52,7 @@ export async function listReportesHtmlRecent(params: {
       .order("fecha", { ascending: false })
       .limit(limit);
     if (error !== null) {
-      return { ok: false, code: "query_error", message: error.message };
+      return { ok: false, code: "query_error", message: publicSupabaseQueryFailureMessage(error.message) };
     }
     const rows: ReporteHtmlRow[] = [];
     for (const item of data ?? []) {

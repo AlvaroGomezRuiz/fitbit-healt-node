@@ -62,7 +62,7 @@ DROP TRIGGER IF EXISTS on_auth_user_created_profiles ON auth.users;
 CREATE TRIGGER on_auth_user_created_profiles
   AFTER INSERT ON auth.users
   FOR EACH ROW
-  EXECUTE PROCEDURE public.handle_profiles_on_auth_user_created();
+  EXECUTE FUNCTION public.handle_profiles_on_auth_user_created();
 
 -- ── Plantilla comentada (multi-tenant / RLS estricta) ──────────────────────
 -- Sustituye políticas `authenticated_rw_*` genéricas cuando encaje el modelo:

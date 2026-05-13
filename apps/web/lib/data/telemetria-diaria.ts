@@ -1,6 +1,7 @@
 import "server-only";
 
 import { parseFitbitFeatureFlagsFromEnv } from "@/lib/fitbit/config";
+import { publicSupabaseQueryFailureMessage } from "@/lib/supabase/public-query-error-message";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { z } from "zod";
 
@@ -126,7 +127,7 @@ export async function listTelemetriaDiaria(params: {
         disabled: false,
         ok: false,
         code: "query_error",
-        message: error.message,
+        message: publicSupabaseQueryFailureMessage(error.message),
       };
     }
 
@@ -204,7 +205,7 @@ export async function fetchLatestTelemetriaDiaria(): Promise<FetchLatestTelemetr
       .limit(1)
       .maybeSingle();
     if (error !== null) {
-      return { ok: false, code: "query_error", message: error.message };
+      return { ok: false, code: "query_error", message: publicSupabaseQueryFailureMessage(error.message) };
     }
     if (data === null) {
       return { ok: true, row: null };
@@ -261,7 +262,7 @@ export async function fetchTelemetriaDiariaByFecha(params: {
       .eq("fecha", params.fecha)
       .maybeSingle();
     if (error !== null) {
-      return { ok: false, code: "query_error", message: error.message };
+      return { ok: false, code: "query_error", message: publicSupabaseQueryFailureMessage(error.message) };
     }
     if (data === null) {
       return { ok: true, row: null };

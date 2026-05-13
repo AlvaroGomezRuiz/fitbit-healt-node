@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { publicSupabaseQueryFailureMessage } from "@/lib/supabase/public-query-error-message";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const memoriaIaRowSchema = z.object({
@@ -61,7 +62,7 @@ export async function listMemoriaIaRecent(params: {
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error !== null) {
-      return { ok: false, code: "query_error", message: error.message };
+      return { ok: false, code: "query_error", message: publicSupabaseQueryFailureMessage(error.message) };
     }
     const rows: MemoriaIaRow[] = [];
     for (const item of data ?? []) {

@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { publicSupabaseQueryFailureMessage } from "@/lib/supabase/public-query-error-message";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const entrenoOrigenSchema = z.enum(["drive_csv", "lyfta_raw"]);
@@ -43,7 +44,7 @@ export async function fetchUltimaSesionEntreno(): Promise<FetchUltimaSesionEntre
       .limit(1)
       .maybeSingle();
     if (error !== null) {
-      return { ok: false, code: "query_error", message: error.message };
+      return { ok: false, code: "query_error", message: publicSupabaseQueryFailureMessage(error.message) };
     }
     if (data === null) {
       return { ok: true, row: null };

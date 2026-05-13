@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { publicSupabaseQueryFailureMessage } from "@/lib/supabase/public-query-error-message";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const objetivoNutricionTipoSchema = z.enum([
@@ -75,7 +76,7 @@ export async function fetchBiometriaMaestro(): Promise<FetchBiometriaMaestroResu
   try {
     const { data, error } = await supabase.from("biometria_maestro").select(biometriaSelect).maybeSingle();
     if (error !== null) {
-      return { ok: false, code: "query_error", message: error.message };
+      return { ok: false, code: "query_error", message: publicSupabaseQueryFailureMessage(error.message) };
     }
     if (data === null) {
       return { ok: true, row: null };

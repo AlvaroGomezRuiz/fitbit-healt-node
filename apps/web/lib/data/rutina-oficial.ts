@@ -1,5 +1,6 @@
 import "server-only";
 
+import { publicSupabaseQueryFailureMessage } from "@/lib/supabase/public-query-error-message";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type DiaSemanaDb =
@@ -43,7 +44,7 @@ export async function fetchRutinaOficial(): Promise<RutinaOficialFetchResult> {
       return {
         ok: false,
         code: "query_error",
-        message: error.message,
+        message: publicSupabaseQueryFailureMessage(error.message),
       };
     }
     const rows: RutinaOficialRow[] = (data ?? []).map((row: unknown) => {
