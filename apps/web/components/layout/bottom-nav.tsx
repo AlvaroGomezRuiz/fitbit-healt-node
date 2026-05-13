@@ -21,7 +21,7 @@ export function BottomNav(): React.ReactElement {
   return (
     <nav
       aria-label="Navegación principal"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/90 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1 backdrop-blur-md supports-[backdrop-filter]:bg-card/80"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/90 pb-[max(0.5rem,env(safe-area-inset-bottom,0))] pt-1 backdrop-blur-md supports-backdrop-filter:bg-card/80"
     >
       <div className="mx-auto grid max-w-lg grid-cols-4 gap-1 px-2">
         {NAV_ITEMS.map(({ href, label, Icon }) => {

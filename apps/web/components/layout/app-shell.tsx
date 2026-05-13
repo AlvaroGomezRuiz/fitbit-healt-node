@@ -12,7 +12,7 @@ export function AppShell({ children }: AppShellProps): React.ReactElement {
       <main
         id="contenido-principal"
         tabIndex={-1}
-        className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] text-base leading-relaxed"
+        className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0))] text-base leading-relaxed"
       >
         {children}
       </main>

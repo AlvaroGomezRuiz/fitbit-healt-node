@@ -27,11 +27,13 @@
         "name": "next"
       }
     ],
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./*"
       ],
-      "@repo/ai": ["../../lib/ai/index.ts"]
+      "@repo/ai": ["../../lib/ai/index.ts"],
+      "zod": ["./node_modules/zod"]
     }
   },
   "include": [
