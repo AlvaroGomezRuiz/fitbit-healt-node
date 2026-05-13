@@ -1,18 +1,16 @@
 import { NextResponse } from "next/server";
 
-import { buildPreEntrenoSystemPrompt, buildPreEntrenoUserMessage } from "@/lib/ai/pre-entreno-prompt";
+import { buildPostEntrenoSystemPrompt, buildPostEntrenoUserMessage } from "@/lib/ai/post-entreno-prompt";
 import { runDeepSeekCascade } from "@/lib/ai/reexport";
 import { CRON_UNAUTHORIZED_JSON_BODY, validateCronBearerSecret } from "@/lib/cron/cron-secret";
 import {
   isWithinMadridHalfOpenMinuteWindow,
   madridCivilClockLabelHm,
-  readPreEntrenoMadridWindowFromEnv,
+  readPostEntrenoMadridWindowFromEnv,
 } from "@/lib/cron/madrid-cron-window";
 import { biometriaMaestroRowSchema, biometriaSelect } from "@/lib/data/biometria-maestro";
-import { buildEntrenosHistoricoContextForPrompt } from "@/lib/data/build-entrenos-historico-context";
-import { addDaysIsoUtc, todayMadridIso } from "@/lib/data/date-madrid";
-import { type MemoriaIaRow, memoriaIaRowSchema, memoriaIaSelectColumns } from "@/lib/data/memoria-ia";
-import { reporteHtmlRowSchema, reportesHtmlSelectColumns } from "@/lib/data/reportes-html";
+import { buildEntrenosSessionDateContextForPrompt } from "@/lib/data/build-entrenos-historico-context";
+import { todayMadridIso } from "@/lib/data/date-madrid";
 import { telemetriaDiariaRowSchema, telemetriaDiariaSelectColumns } from "@/lib/data/telemetria-diaria";
 import * as PostWriteCache from "@/lib/cache/revalidate-after-data-write";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -20,13 +18,13 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type CronPreEntrenoSkippedBody = {
+type CronPostEntrenoSkippedBody = {
   readonly ok: true;
   readonly skipped: string;
   readonly madridClock: string;
 };
 
-type CronPreEntrenoRanBody = {
+type CronPostEntrenoRanBody = {
   readonly ok: true;
   readonly ran: true;
   readonly fecha: string;
@@ -34,7 +32,7 @@ type CronPreEntrenoRanBody = {
   readonly attempts: number;
 };
 
-type CronPreEntrenoErrorBody = {
+type CronPostEntrenoErrorBody = {
   readonly ok: false;
   readonly error: "deepseek_failed" | "persist_failed" | "missing_biometria";
 };
@@ -49,12 +47,12 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 
 export async function GET(request: Request): Promise<
   NextResponse<
-    CronPreEntrenoSkippedBody | CronPreEntrenoRanBody | CronPreEntrenoErrorBody | { readonly error: string }
+    CronPostEntrenoSkippedBody | CronPostEntrenoRanBody | CronPostEntrenoErrorBody | { readonly error: string }
   >
 > {
   const auth = validateCronBearerSecret(request);
   if (auth.kind === "missing_cron_secret_env") {
-    const body: CronPreEntrenoSkippedBody = {
+    const body: CronPostEntrenoSkippedBody = {
       ok: true,
       skipped: "missing_cron_secret_env",
       madridClock: madridCivilClockLabelHm(new Date()),
@@ -67,9 +65,9 @@ export async function GET(request: Request): Promise<
 
   const now = new Date();
   const madridClock = madridCivilClockLabelHm(now);
-  const bypassMadridWindow = isTruthyEnvFlag(process.env.CRON_PRE_ENTRENO_BYPASS_WINDOW);
+  const bypassMadridWindow = isTruthyEnvFlag(process.env.CRON_POST_ENTRENO_BYPASS_WINDOW);
   if (!bypassMadridWindow) {
-    const win = readPreEntrenoMadridWindowFromEnv(process.env);
+    const win = readPostEntrenoMadridWindowFromEnv(process.env);
     if (
       !isWithinMadridHalfOpenMinuteWindow({
         when: now,
@@ -77,30 +75,29 @@ export async function GET(request: Request): Promise<
         endExclusiveMin: win.endExclusiveMin,
       })
     ) {
-      const body: CronPreEntrenoSkippedBody = { ok: true, skipped: "outside_madrid_window", madridClock };
+      const body: CronPostEntrenoSkippedBody = { ok: true, skipped: "outside_madrid_window", madridClock };
       return NextResponse.json(body);
     }
   }
 
-  if (!isTruthyEnvFlag(process.env.CRON_PRE_ENTRENO_DEEPSEEK)) {
-    const body: CronPreEntrenoSkippedBody = { ok: true, skipped: "cron_ai_disabled", madridClock };
+  if (!isTruthyEnvFlag(process.env.CRON_POST_ENTRENO_DEEPSEEK)) {
+    const body: CronPostEntrenoSkippedBody = { ok: true, skipped: "cron_ai_disabled", madridClock };
     return NextResponse.json(body);
   }
 
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (apiKey === undefined || apiKey.trim() === "") {
-    const body: CronPreEntrenoSkippedBody = { ok: true, skipped: "missing_deepseek_api_key", madridClock };
+    const body: CronPostEntrenoSkippedBody = { ok: true, skipped: "missing_deepseek_api_key", madridClock };
     return NextResponse.json(body);
   }
 
   const supabase = createSupabaseServiceRoleClient();
   if (supabase === null) {
-    const body: CronPreEntrenoSkippedBody = { ok: true, skipped: "missing_service_role_env", madridClock };
+    const body: CronPostEntrenoSkippedBody = { ok: true, skipped: "missing_service_role_env", madridClock };
     return NextResponse.json(body);
   }
 
   const fecha = todayMadridIso();
-  const fechaNochePrev = addDaysIsoUtc(fecha, -1);
 
   const { data: bioRaw, error: bioErr } = await supabase
     .from("biometria_maestro")
@@ -108,17 +105,17 @@ export async function GET(request: Request): Promise<
     .maybeSingle();
 
   if (bioErr !== null) {
-    const body: CronPreEntrenoSkippedBody = { ok: true, skipped: "biometria_query_error", madridClock };
+    const body: CronPostEntrenoSkippedBody = { ok: true, skipped: "biometria_query_error", madridClock };
     return NextResponse.json(body);
   }
   if (bioRaw === null) {
-    const body: CronPreEntrenoErrorBody = { ok: false, error: "missing_biometria" };
+    const body: CronPostEntrenoErrorBody = { ok: false, error: "missing_biometria" };
     return NextResponse.json(body, { status: 422 });
   }
 
   const bioParsed = biometriaMaestroRowSchema.safeParse(bioRaw);
   if (!bioParsed.success) {
-    const body: CronPreEntrenoSkippedBody = { ok: true, skipped: "biometria_row_shape", madridClock };
+    const body: CronPostEntrenoSkippedBody = { ok: true, skipped: "biometria_row_shape", madridClock };
     return NextResponse.json(body);
   }
   const bio = bioParsed.data;
@@ -126,63 +123,29 @@ export async function GET(request: Request): Promise<
   const { data: teleRaw, error: teleErr } = await supabase
     .from("telemetria_diaria")
     .select(telemetriaDiariaSelectColumns)
-    .eq("fecha", fechaNochePrev)
+    .eq("fecha", fecha)
     .maybeSingle();
 
-  let teleNochePrev = null;
+  let teleHoy = null;
   if (teleErr === null && teleRaw !== null) {
     const teleParsed = telemetriaDiariaRowSchema.safeParse(teleRaw);
     if (teleParsed.success) {
-      teleNochePrev = teleParsed.data;
+      teleHoy = teleParsed.data;
     }
   }
 
-  const { data: resumenRaw, error: resumenErr } = await supabase
-    .from("reportes_html")
-    .select(reportesHtmlSelectColumns)
-    .eq("tipo", "RESUMEN_NOCHE")
-    .order("fecha", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  let ultimoResumenNoche = null;
-  if (resumenErr === null && resumenRaw !== null) {
-    const r = reporteHtmlRowSchema.safeParse(resumenRaw);
-    if (r.success) {
-      ultimoResumenNoche = r.data;
-    }
-  }
-
-  const { data: memData, error: memErr } = await supabase
-    .from("memoria_ia")
-    .select(memoriaIaSelectColumns)
-    .order("created_at", { ascending: false })
-    .limit(40);
-
-  const memoriaTail: MemoriaIaRow[] = [];
-  if (memErr === null && memData !== null) {
-    for (const row of memData) {
-      const m = memoriaIaRowSchema.safeParse(row);
-      if (m.success) {
-        memoriaTail.push(m.data);
-      }
-    }
-  }
-
-  const entrenosHistoricoCompact = await buildEntrenosHistoricoContextForPrompt({
+  const entrenosDiaCompact = await buildEntrenosSessionDateContextForPrompt({
     supabase,
-    maxSessions: 10,
-    maxChars: 2000,
+    sessionDate: fecha,
+    maxChars: 2400,
   });
 
-  const systemPrompt = buildPreEntrenoSystemPrompt();
-  const userMessage = buildPreEntrenoUserMessage({
+  const systemPrompt = buildPostEntrenoSystemPrompt();
+  const userMessage = buildPostEntrenoUserMessage({
     fechaMadrid: fecha,
-    telemetriaNochePrev: teleNochePrev,
-    ultimoResumenNoche,
-    memoriaTail,
+    telemetriaHoy: teleHoy,
+    entrenosDiaCompact,
     biometria: bio,
-    entrenosHistoricoCompact,
   });
 
   let result: { text: string; modelUsed: string; attempts: number };
@@ -196,15 +159,15 @@ export async function GET(request: Request): Promise<
       signal: undefined,
     });
   } catch {
-    const body: CronPreEntrenoErrorBody = { ok: false, error: "deepseek_failed" };
+    const body: CronPostEntrenoErrorBody = { ok: false, error: "deepseek_failed" };
     return NextResponse.json(body, { status: 500 });
   }
 
-  const nombreArchivo = `pre_entreno_${fecha}.html`;
+  const nombreArchivo = `post_entreno_${fecha}.html`;
   const { error: upsertErr } = await supabase.from("reportes_html").upsert(
     {
       fecha,
-      tipo: "PRE_ENTRENO",
+      tipo: "POST_ENTRENO",
       nombre_archivo: nombreArchivo,
       drive_file_id: null,
       html_content: result.text.trim(),
@@ -213,13 +176,13 @@ export async function GET(request: Request): Promise<
   );
 
   if (upsertErr !== null) {
-    const body: CronPreEntrenoErrorBody = { ok: false, error: "persist_failed" };
+    const body: CronPostEntrenoErrorBody = { ok: false, error: "persist_failed" };
     return NextResponse.json(body, { status: 500 });
   }
 
-  PostWriteCache.revalidateAfterPreEntrenoReportWrite();
+  PostWriteCache.revalidateAfterPostEntrenoReportWrite();
 
-  const body: CronPreEntrenoRanBody = {
+  const body: CronPostEntrenoRanBody = {
     ok: true,
     ran: true,
     fecha,

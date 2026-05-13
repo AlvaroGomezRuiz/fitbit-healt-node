@@ -61,6 +61,10 @@ export const FITBIT_PULL_DEFAULT_END_EXCLUSIVE_MIN = 8 * 60 + 50;
 export const NUTRITION_SHOPPING_SUNDAY_DEFAULT_START_MIN = 9 * 60 + 55;
 export const NUTRITION_SHOPPING_SUNDAY_DEFAULT_END_EXCLUSIVE_MIN = 10 * 60 + 15;
 
+/** Ventana post-entreno (~14:30 Madrid): [14:20, 14:45) civil Madrid. */
+export const POST_ENTRENO_DEFAULT_START_MIN = 14 * 60 + 20;
+export const POST_ENTRENO_DEFAULT_END_EXCLUSIVE_MIN = 14 * 60 + 45;
+
 function clockToMinutes(hm: string): number | null {
   const clockSchema = z.string().regex(/^\d{2}:\d{2}$/);
   const parsed = clockSchema.safeParse(hm);
@@ -131,6 +135,39 @@ export function readNutritionShoppingSundayMadridWindowFromEnv(
     return {
       startMin: NUTRITION_SHOPPING_SUNDAY_DEFAULT_START_MIN,
       endExclusiveMin: NUTRITION_SHOPPING_SUNDAY_DEFAULT_END_EXCLUSIVE_MIN,
+    };
+  }
+  return { startMin, endExclusiveMin };
+}
+
+/**
+ * Lee `CRON_POST_ENTRENO_WINDOW=HH:MM-HH:MM` (fin exclusivo). Si falta o es inválido, usa defaults §POST_ENTRENO_*.
+ */
+export function readPostEntrenoMadridWindowFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly startMin: number; readonly endExclusiveMin: number } {
+  const raw = env.CRON_POST_ENTRENO_WINDOW?.trim();
+  if (raw === undefined || raw === "") {
+    return {
+      startMin: POST_ENTRENO_DEFAULT_START_MIN,
+      endExclusiveMin: POST_ENTRENO_DEFAULT_END_EXCLUSIVE_MIN,
+    };
+  }
+  const halves = raw.split("-");
+  if (halves.length !== 2) {
+    return {
+      startMin: POST_ENTRENO_DEFAULT_START_MIN,
+      endExclusiveMin: POST_ENTRENO_DEFAULT_END_EXCLUSIVE_MIN,
+    };
+  }
+  const left = halves[0]?.trim() ?? "";
+  const right = halves[1]?.trim() ?? "";
+  const startMin = clockToMinutes(left);
+  const endExclusiveMin = clockToMinutes(right);
+  if (startMin === null || endExclusiveMin === null || startMin >= endExclusiveMin) {
+    return {
+      startMin: POST_ENTRENO_DEFAULT_START_MIN,
+      endExclusiveMin: POST_ENTRENO_DEFAULT_END_EXCLUSIVE_MIN,
     };
   }
   return { startMin, endExclusiveMin };

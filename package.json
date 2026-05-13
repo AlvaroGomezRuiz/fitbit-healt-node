@@ -5,6 +5,7 @@
   "scripts": {
     "migrate:drive": "tsx scripts/migrate_from_drive.ts",
     "smoke:deepseek": "tsx scripts/smoke_deepseek.ts",
+    "cron:smoke": "tsx scripts/run-all-crons-smoke.mts",
     "typecheck:scripts": "tsc --noEmit -p tsconfig.json",
     "typecheck:web": "tsc --noEmit -p apps/web/tsconfig.json",
     "web:dev": "npm --prefix apps/web run dev",

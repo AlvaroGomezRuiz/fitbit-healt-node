@@ -236,15 +236,46 @@ Solo **una** de las dos coincide con la ventana por defecto **`[09:55, 10:15)`**
 
 Ruta: `GET /api/cron/fitbit-telemetria-pull`. Ventana Madrid **`[08:35, 08:50)`** + `FITBIT_ACTIVO` + `FITBIT_INGEST_ENABLED`. Hoy devuelve `note: fetch_not_wired` (TODO fetch + `POST /api/fitbit/ingest`); cuando exista cliente, alinea la ingesta **antes** del pre-entreno.
 
+### Post-entreno (~14:30, informe tras sesión)
+
+| Expresión UTC | Hora local aprox. |
+|----------------|-------------------|
+| `30 12 * * *` | ~14:30 CEST (verano) |
+| `30 13 * * *` | ~14:30 CET (invierno) |
+
+Igual que pre-entreno: solo **una** invocación al día suele caer en la ventana Madrid por defecto **`[14:20, 14:45)`** (configurable con `CRON_POST_ENTRENO_WINDOW=HH:MM-HH:MM`). Fuera de ventana: `skipped: outside_madrid_window`. En **desarrollo local** se puede omitir la ventana con `CRON_POST_ENTRENO_BYPASS_WINDOW=1` (mismo patrón que lista compra / pre-entreno).
+
+- Ruta: `GET /api/cron/post-entreno` (`apps/web/app/api/cron/post-entreno/route.ts`).
+- Requiere `CRON_POST_ENTRENO_DEEPSEEK`, `DEEPSEEK_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `biometria_maestro`; lee `telemetria_diaria` **hoy** (fecha civil Madrid), bloque compacto `entrenos_historico` filtrado por `session_date` = hoy, genera HTML y **upsert** `reportes_html` (`POST_ENTRENO`).
+
+### Pre-entreno: bypass ventana en local
+
+- Variable opcional **`CRON_PRE_ENTRENO_BYPASS_WINDOW=1`** (u `true`): no comprueba la ventana Madrid; útil para smoke sin esperar a las ~09:00. Sigue exigiendo `CRON_PRE_ENTRENO_DEEPSEEK` y el resto de requisitos.
+
 ### Otros crons (tabla breve)
 
 | Ruta | Horario en repo (UTC) | Notas |
 |------|------------------------|--------|
 | `/api/cron/resumen-noche` | `0 21 * * *` | Stub DeepSeek vía `handleCronDeepSeekGet`; exige `FITBIT_ACTIVO` y flag §5; prompt incluye resumen `entrenos_historico` si hay `SUPABASE_SERVICE_ROLE_KEY`. |
 | `/api/cron/daily-nutrition-routine` | `50 7 * * *` | Un solo cron UTC: equivale a **08:50 hora estándar Madrid (CET, invierno)**. En **CEST (verano)** corre a **09:50** local (±1 h inevitable con un único UTC en Vercel). Dos entradas UTC distintas dispararían **dos veces al día** la misma ruta (doble DeepSeek) salvo lógica adicional; aquí no se duplica. Incluye bloque compacto `entrenos_historico` en el prompt. |
+| `/api/cron/post-entreno` | `30 12 * * *` y `30 13 * * *` | Informe post-sesión; ventana Madrid §Post-entreno; upsert `reportes_html` `POST_ENTRENO`; flag `CRON_POST_ENTRENO_DEEPSEEK`. |
 | `/api/cron/nutrition-shopping-weekly` | `0 8 * * 0` y `0 9 * * 0` | Lista+menú semanal; ventana Madrid domingo + flag §5; upsert `memoria_ia`. |
 
 Vercel envía `Authorization: Bearer <CRON_SECRET>`. Sin `CRON_SECRET` configurado, las rutas responden *skipped* (`missing_cron_secret_env`) sin llamar a IA ni Supabase de coste alto donde aplica.
+
+---
+
+## 7.1 Prueba local crons (smoke HTTP)
+
+Con el **servidor Next** en marcha (`rtk npm run web:dev`) y variables cargadas en `apps/web/.env.local` (y opcionalmente `.env` en la raíz para claves compartidas con scripts), puedes disparar todas las rutas cron como las invocaría Vercel:
+
+```text
+rtk npm run cron:smoke
+```
+
+Equivalente directo: `rtk npx tsx scripts/run-all-crons-smoke.mts`. Si tu toolchain ejecuta TypeScript con Node sin paso previo de build, `rtk node scripts/run-all-crons-smoke.mts` puede ser equivalente; si Node rechaza el `.mts`, usa siempre `tsx` o `cron:smoke`. El script lee primero `apps/web/.env.local` y después la raíz `.env` (sin sobrescribir claves ya definidas), usa `NEXT_PUBLIC_SITE_URL` o `SITE_URL` o `http://localhost:3000`, y envía `GET` con `Authorization: Bearer <CRON_SECRET>` a cada ruta listada en `vercel.json` más cualquier `apps/web/app/api/cron/*/route.ts`. Orden sugerido en el propio script: telemetría pull → nutrición diaria → pre-entreno → compra semanal → post-entreno → resumen noche.
+
+**Checklist env (nombres solamente; valores fuera del repo):** `CRON_SECRET`; flags `CRON_PRE_ENTRENO_DEEPSEEK`, `CRON_POST_ENTRENO_DEEPSEEK`, `CRON_DAILY_NUTRITION_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_DEEPSEEK`, `CRON_RESUMEN_NOCHE_DEEPSEEK`; `DEEPSEEK_API_KEY`; `SUPABASE_SERVICE_ROLE_KEY` y URLs Supabase que consuma la app; para **resumen noche** y ventanas Fitbit, `FITBIT_ACTIVO` (y flags de ingesta según `parseFitbitFeatureFlagsFromEnv`); para **smoke fuera de horario Madrid**, `CRON_PRE_ENTRENO_BYPASS_WINDOW`, `CRON_POST_ENTRENO_BYPASS_WINDOW`, `CRON_NUTRITION_SHOPPING_BYPASS_WINDOW` (lista compra también exige domingo en Madrid salvo bypass).
 
 ---
 
@@ -312,6 +343,7 @@ rtk npm run web:build
 rtk npm run migrate:drive
 rtk npm run migrate:drive -- --dry-run
 rtk npm run smoke:deepseek
+rtk npm run cron:smoke
 ```
 
 Typecheck puntual web (si lo necesitas): `rtk npx tsc -p apps/web --noEmit`

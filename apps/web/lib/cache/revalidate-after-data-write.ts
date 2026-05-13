@@ -23,6 +23,12 @@ export function revalidateAfterPreEntrenoReportWrite(): void {
   revalidateAppPage("/trainer");
 }
 
+/** Tras upsert en `reportes_html` tipo post-entreno (dashboard / trainer). */
+export function revalidateAfterPostEntrenoReportWrite(): void {
+  revalidateAppPage("/trainer");
+  revalidateAppPage("/");
+}
+
 /** Tras upsert lista compra / menú en `memoria_ia`. */
 export function revalidateAfterSundayShoppingWrite(): void {
   revalidateAppPage("/nutrition");

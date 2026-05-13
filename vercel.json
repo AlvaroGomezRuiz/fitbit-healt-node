@@ -25,6 +25,14 @@
       "schedule": "50 7 * * *"
     },
     {
+      "path": "/api/cron/post-entreno",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/post-entreno",
+      "schedule": "30 13 * * *"
+    },
+    {
       "path": "/api/cron/nutrition-shopping-weekly",
       "schedule": "0 8 * * 0"
     },

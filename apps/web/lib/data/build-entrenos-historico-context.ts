@@ -99,3 +99,52 @@ export async function buildEntrenosHistoricoContextForPrompt(params: {
   const body = ["Entrenos recientes (compacto, por fecha de sesión):", ...bullets].join("\n");
   return clampText(body, maxChars);
 }
+
+/**
+ * Bloque compacto de `entrenos_historico` solo para `session_date` civil (p. ej. hoy Madrid).
+ */
+export async function buildEntrenosSessionDateContextForPrompt(params: {
+  readonly supabase: SupabaseClient;
+  readonly sessionDate: string;
+  readonly maxChars: number;
+}): Promise<string> {
+  const maxChars = Math.min(Math.max(params.maxChars, 200), 4000);
+  const { data, error } = await params.supabase
+    .from("entrenos_historico")
+    .select("session_date,session_title,origen,exercise")
+    .eq("session_date", params.sessionDate)
+    .order("exercise", { ascending: true })
+    .limit(80);
+
+  if (error !== null) {
+    return `Entrenos del día ${params.sessionDate}: no disponible (error de lectura).`;
+  }
+  if (data === null || data.length === 0) {
+    return `Entrenos del día ${params.sessionDate}: sin filas en entrenos_historico para esa fecha.`;
+  }
+
+  const exercises: string[] = [];
+  let title = "—";
+  let origen = "—";
+  for (const raw of data) {
+    const parsed = entrenoHistoricoContextRowSchema.safeParse(raw);
+    if (!parsed.success) {
+      continue;
+    }
+    const row: EntrenoHistoricoContextRow = parsed.data;
+    title = row.session_title.trim() || title;
+    origen = row.origen;
+    const ex = row.exercise.trim();
+    if (ex.length > 0 && !exercises.includes(ex)) {
+      exercises.push(ex);
+    }
+  }
+
+  const exSample = exercises.length === 0 ? "—" : exercises.slice(0, 12).join(", ");
+  const body = [
+    `Entrenos del día ${params.sessionDate} (Europe/Madrid, session_date):`,
+    `- ${params.sessionDate} | ${origen} | ${title}`,
+    `- Ejercicios (${String(exercises.length)}): ${exSample}`,
+  ].join("\n");
+  return clampText(body, maxChars);
+}
