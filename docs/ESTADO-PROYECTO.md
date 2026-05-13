@@ -30,10 +30,22 @@ No hay carpetas top-level `frontend/` ni `web/`; la UI vive en **`apps/web/`**.
 
 ## 3. Qué está hecho (verificado en código)
 
+### Checklist producción (máx. 8 puntos)
+
+- Aplicar **todas** las migraciones de `supabase/migrations/` al proyecto Postgres enlazado (orden §6) antes de confiar en la UI.
+- En Vercel (app `apps/web`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SITE_URL`.
+- Crons: `CRON_SECRET` (Bearer en GET); flags `CRON_PRE_ENTRENO_DEEPSEEK`, `CRON_DAILY_NUTRITION_DEEPSEEK`, `CRON_RESUMEN_NOCHE_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_DEEPSEEK` según qué jobs quieras activos; ventanas opcionales `CRON_PRE_ENTRENO_WINDOW`, `CRON_NUTRITION_SHOPPING_WINDOW`.
+- **No** definir `CRON_NUTRITION_SHOPPING_BYPASS_WINDOW` en producción (solo pruebas locales).
+- Tras **crear o rotar** un secreto en Vercel, **redeploy** del deployment activo.
+- `DEEPSEEK_API_KEY` si usas crons o acciones con IA; `FITBIT_ACTIVO` + `NEXT_PUBLIC_FITBIT_UI_ENABLED` si quieres telemetría en UI.
+- Comprobar que el workflow de migraciones (GitHub → Supabase) sigue enlazado al `project-ref` correcto.
+
+### Detalle funcional
+
 - **Supabase en web:** clientes servidor/anon; `SUPABASE_SERVICE_ROLE_KEY` para operaciones que deben ignorar RLS (cron nutrición, Lyfta según acciones, etc.). Validación estricta de host `NEXT_PUBLIC_SUPABASE_URL` (no URL del dashboard).
-- **Rutas principales:** inicio, `/nutrition` (día Madrid, biometría, telemetría con flag Fitbit, memoria compra, **`diario_plan_ia`** vía `fetchNutritionDay`), `/trainer` (rutina, Lyfta), `/health`, login/callback Supabase.
+- **Rutas principales:** inicio (tres pilares compactos + pestañas de detalle), `/nutrition` (día Madrid, biometría, telemetría con flag Fitbit, memoria compra, **`diario_plan_ia`** vía `fetchNutritionDay`), `/trainer` (rutina, historial `entrenos_historico`, bloque post-entreno, Lyfta), `/health`, login/callback Supabase.
 - **Lyfta:** upsert en `entrenos_historico` con fingerprint; análisis IA opcional.
-- **Nutrición:** prompts y acciones (`nutrition-shopping`); datos del plan diario IA desde tabla `diario_plan_ia`.
+- **Nutrición:** lista semanal domingo vía cron + `lib/nutrition/sunday-shopping-generation.ts` (solo lectura en UI); datos del plan diario IA desde tabla `diario_plan_ia`.
 - **Cron `daily-nutrition-routine`:** `GET` valida `CRON_SECRET`, flag `CRON_DAILY_NUTRITION_DEEPSEEK`, llama a DeepSeek y hace **upsert** en `diario_plan_ia` (`fecha` Madrid + markdown); el prompt incluye resumen compacto `entrenos_historico`. **Cron `pre-entreno`:** dos disparos UTC (`0 7` y `0 8`) con **guardia de ventana civil Madrid** `[08:55, 09:15)` (configurable con `CRON_PRE_ENTRENO_WINDOW`); solo dentro de la ventana, con `CRON_PRE_ENTRENO_DEEPSEEK` y datos Supabase, genera HTML y **upsert** en `reportes_html` (`PRE_ENTRENO`, `fecha` = hoy Madrid); incluye `entrenos_historico` compacto. **Cron `fitbit-telemetria-pull`:** `40 6` y `40 7` UTC + ventana `[08:35, 08:50)` Madrid; con `FITBIT_ACTIVO` + `FITBIT_INGEST_ENABLED` deja hook TODO hasta cliente de fetch (telemetría previa al pre-entreno). **Cron `resumen-noche`:** `handleCronDeepSeekGet` (requiere `FITBIT_ACTIVO` además de key y flag); el prompt añade `entrenos_historico` compacto. **Cron `nutrition-shopping-weekly`:** dos disparos UTC en **domingo** (`0 8` y `0 9`) con ventana civil Madrid **`[09:55, 10:15)`** (configurable con `CRON_NUTRITION_SHOPPING_WINDOW`); solo si además es **domingo** en `Europe/Madrid`, `CRON_NUTRITION_SHOPPING_DEEPSEEK`, `DEEPSEEK_API_KEY` y `SUPABASE_SERVICE_ROLE_KEY`, genera lista+menú (DeepSeek) y hace **upsert** en `memoria_ia` (clave semanal por lunes Madrid).
 - **IA TS:** `runDeepSeekCascade` en `lib/ai/deepseek-cascade.ts`, reexport en web.
 - **Fitbit / telemetría:** flags centralizados en `parseFitbitFeatureFlagsFromEnv` / maestro `FITBIT_ACTIVO` (`apps/web/lib/fitbit/config.ts`).
@@ -51,6 +63,32 @@ No hay carpetas top-level `frontend/` ni `web/`; la UI vive en **`apps/web/`**.
 | IA | API DeepSeek (cascada configurable env). |
 | Monorepo ligero | `package.json` en raíz (scripts TS + deps) y `apps/web/package.json` (Next). |
 
+### 4.1 Web ↔ Supabase: caché y coherencia
+
+Tras **escrituras** en Postgres (Server Actions o rutas API/cron), la app invalida rutas concretas vía `revalidatePath` (modo **`page`**, no todo el layout) para que la siguiente visita RSC vuelva a leer Supabase sin depender de un redeploy manual. Punto de entrada del helper: `apps/web/lib/cache/revalidate-after-data-write.ts` (p. ej. Lyfta → `/trainer` y `/`; plan diario IA → `/nutrition`; telemetría → `/nutrition` y `/`). Búsqueda en `apps/web`: no hay `unstable_cache` ni `cache()` con tags; por tanto no aplica `revalidateTag` en este momento.
+
+#### Auditoría breve — principales escritores (service role / servidor)
+
+| # | Ubicación | Operación / tabla |
+|---|-----------|-------------------|
+| 1 | `apps/web/app/actions/lyfta-ingest.ts` | `upsert` → `entrenos_historico` |
+| 2 | `apps/web/app/api/cron/daily-nutrition-routine/route.ts` | `upsert` → `diario_plan_ia` |
+| 3 | `apps/web/app/api/cron/pre-entreno/route.ts` | `upsert` → `reportes_html` |
+| 4 | `apps/web/lib/nutrition/sunday-shopping-generation.ts` (invocado por `api/cron/nutrition-shopping-weekly`) | `upsert` → `memoria_ia` |
+| 5 | `apps/web/app/api/fitbit/ingest/route.ts` | `upsert` → `telemetria_diaria` |
+
+*Nota:* `lyfta-analyze.ts` y `resumen-noche/route.ts` usan Supabase sobre todo para **lectura** (prompt / contexto), no como escritores principales.
+
+#### Sincronización en tiempo real
+
+Para que la UI refleje cambios en Postgres hay dos familias de solución: **invalidación bajo demanda** (`revalidatePath` tras mutaciones conocidas, barata y determinista para MVP) frente a **Realtime** de Supabase (canal `postgres_changes` sobre p. ej. `telemetria_diaria`: útil si varios clientes abiertos deben ver pulsos en vivo sin recargar, pero añade suscripción WebSocket, reconexión y manejo de estado en cliente). Para este repo, **MVP recomendado:** seguir con `revalidatePath` en los puntos de escritura ya cableados; reservar Realtime cuando exista un requisito explícito de “varias pestañas / dispositivos” o actualización sub‑segundo sin acción del usuario.
+
+#### Despliegue: orden migraciones y aplicación web
+
+- **GitHub Actions:** en push a `main` o `master`, el workflow `.github/workflows/supabase-migrations.yml` aplica SQL pendiente con `supabase db push --linked` (requiere secrets `SUPABASE_*` del workflow).
+- **Vercel:** despliega `apps/web` al mismo push según el proyecto enlazado.
+- **Orden que importa:** las migraciones deben estar **aplicadas en Supabase antes** de que el código desplegado espere columnas o políticas nuevas; si el deploy web gana a `db push`, pueden aparecer errores 500 o lecturas vacías hasta que el job de migraciones termine. En la práctica, el mismo push dispara ambos pipelines: conviene que el SQL del PR esté revisado y que el job de migraciones sea estable; si hace falta desacoplar, aplica migraciones en una fusión previa o ejecuta `supabase db push` manualmente antes de desplegar cambios de código dependientes.
+
 ---
 
 ## 5. Variables de entorno (solo nombres; nunca valores en docs)
@@ -59,10 +97,14 @@ No hay carpetas top-level `frontend/` ni `web/`; la UI vive en **`apps/web/`**.
 
 - **Supabase:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 - **Sitio:** `NEXT_PUBLIC_SITE_URL` (login/callback).
-- **Crons:** `CRON_SECRET`; `CRON_PRE_ENTRENO_DEEPSEEK`, `CRON_PRE_ENTRENO_WINDOW` (opcional, formato `HH:MM-HH:MM` fin exclusivo; por defecto `08:55-09:15` civil Madrid), `CRON_RESUMEN_NOCHE_DEEPSEEK`, `CRON_DAILY_NUTRITION_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_WINDOW` (opcional; por defecto `09:55-10:15` civil Madrid, domingo) (valores tipo `1` / `true` / `yes` / `on`).
+- **Crons:** `CRON_SECRET`; `CRON_PRE_ENTRENO_DEEPSEEK`, `CRON_PRE_ENTRENO_WINDOW` (opcional, formato `HH:MM-HH:MM` fin exclusivo; por defecto `08:55-09:15` civil Madrid), `CRON_RESUMEN_NOCHE_DEEPSEEK`, `CRON_DAILY_NUTRITION_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_DEEPSEEK`, `CRON_NUTRITION_SHOPPING_WINDOW` (opcional; por defecto `09:55-10:15` civil Madrid, domingo), `CRON_NUTRITION_SHOPPING_BYPASS_WINDOW` (**solo local / pruebas**; ver §5.1) (valores tipo `1` / `true` / `yes` / `on` donde aplique).
 - **DeepSeek:** `DEEPSEEK_API_KEY`; opcionales `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL_CASCADE`, `DEEPSEEK_MODEL_COMPLEX`, `DEEPSEEK_MAX_RETRIES`, `DEEPSEEK_BACKOFF_BASE_MS`, `DEEPSEEK_BACKOFF_MAX_MS`, `DEEPSEEK_TIMEOUT_MS`.
 - **Fitbit / telemetría UI:** `FITBIT_ACTIVO`; `NEXT_PUBLIC_FITBIT_UI_ENABLED`, `FITBIT_INGEST_ENABLED`, `FITBIT_SYNC_ENABLED` (comportamiento detallado en `parseFitbitFeatureFlagsFromEnv`).
 - **Webhook salud:** `HEALTH_WEBHOOK_SECRET`.
+
+### 5.1. Prueba local del cron `nutrition-shopping-weekly` (ventana Madrid / domingo)
+
+Para disparar **una vez** la generación sin esperar al domingo ni a la ventana `[09:55, 10:15)` Madrid: en `.env.local` pon `CRON_NUTRITION_SHOPPING_BYPASS_WINDOW=1` (o `true`), mantén `CRON_SECRET` y el resto de flags/keys del cron (`CRON_NUTRITION_SHOPPING_DEEPSEEK`, `DEEPSEEK_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, etc.), arranca la app y haz un `GET` a `/api/cron/nutrition-shopping-weekly` con cabecera `Authorization: Bearer <mismo CRON_SECRET>`. La ruta solo aplica el bypass si el Bearer es válido; así se evita abuso público. **Quita** `CRON_NUTRITION_SHOPPING_BYPASS_WINDOW` o déjala en `0` cuando termines. **No** habilitar este bypass en el entorno de **producción** de Vercel (riesgo de ejecuciones fuera de ventana y coste IA imprevisto).
 
 ### Raíz (scripts, p. ej. migración Drive)
 
@@ -119,7 +161,7 @@ Comprueba en el panel de Vercel (Proyecto → Settings → Environment Variables
 
 ## 6. Migraciones Supabase (`supabase/migrations/`)
 
-### Inventario de archivos (10 en repo; orden por timestamp)
+### Inventario de archivos (12 en repo; orden por timestamp)
 
 Aplicar en **todos** los entornos el conjunto que exista en `supabase/migrations/` al desplegar.
 
@@ -133,6 +175,8 @@ Aplicar en **todos** los entornos el conjunto que exista en `supabase/migrations
 8. `20260517120000_phase1_anon_biometria_singleton_entrenos_lyfta_update.sql`
 9. `20260518100000_phase1_anon_select_entrenos_historico_lyfta.sql`
 10. `20260518120000_phase1_diario_plan_ia.sql`
+11. `20260519120000_phase1_anon_select_memoria_reportes_html.sql`
+12. `20260520103000_phase1_anon_select_entrenos_historico_list.sql`
 
 ### Aplicar migraciones
 
@@ -207,7 +251,7 @@ Vercel envía `Authorization: Bearer <CRON_SECRET>`. Sin `CRON_SECRET` configura
 ## 8. Verificación en UI (manual)
 
 - **`/trainer`:** lista `rutina_oficial` si env y RLS correctos; Lyfta: duplicado exacto falla por `UNIQUE (origen, row_fingerprint)` (mensaje en acción).
-- **`/nutrition`:** fecha `?fecha=YYYY-MM-DD`; lista compra desde `memoria_ia` (heurística); plan IA del día si el cron o datos rellenan `diario_plan_ia`; generación semanal automática vía cron domingo + botón manual.
+- **`/nutrition`:** fecha `?fecha=YYYY-MM-DD`; lista compra desde `memoria_ia` (heurística); plan IA del día si el cron o datos rellenan `diario_plan_ia`; generación semanal automática vía cron domingo (solo lectura en UI).
 - **`/health`:** con `NEXT_PUBLIC_FITBIT_UI_ENABLED` y maestro Fitbit activo según política de flags.
 
 ---
@@ -276,4 +320,4 @@ Typecheck puntual web (si lo necesitas): `rtk npx tsc -p apps/web --noEmit`
 
 ## 14. Mantenimiento de este documento
 
-Al cambiar crons, tablas, flags de env o flujos de nutrición/Lyfta: actualizar **fecha**, §3, §5–§7, §9 y §12; si cambias migraciones o CI de Supabase, §6 y `.github/workflows/`. Este fichero es la **única** fuente bajo `docs/`; no recrear múltiples guías contradictorias.
+Al cambiar crons, tablas, flags de env o flujos de nutrición/Lyfta: actualizar **fecha**, §3, §4.1, §5–§7, §9 y §12; si cambias migraciones o CI de Supabase, §6 y `.github/workflows/`. Este fichero es la **única** fuente bajo `docs/`; no recrear múltiples guías contradictorias.

@@ -3,12 +3,13 @@ import { NextResponse } from "next/server";
 import { biometriaMaestroRowSchema, biometriaSelect } from "@/lib/data/biometria-maestro";
 import { buildEntrenosHistoricoContextForPrompt } from "@/lib/data/build-entrenos-historico-context";
 import { isSundayEuropeMadrid, todayMadridIso } from "@/lib/data/date-madrid";
-import { validateCronBearerSecret } from "@/lib/cron/cron-secret";
+import { CRON_UNAUTHORIZED_JSON_BODY, validateCronBearerSecret } from "@/lib/cron/cron-secret";
 import {
   isWithinMadridHalfOpenMinuteWindow,
   madridCivilClockLabelHm,
   readNutritionShoppingSundayMadridWindowFromEnv,
 } from "@/lib/cron/madrid-cron-window";
+import { revalidateAfterSundayShoppingWrite } from "@/lib/cache/revalidate-after-data-write";
 import {
   generateSundayShoppingMarkdown,
   persistSundayShoppingMarkdownToMemoriaIa,
@@ -50,7 +51,7 @@ export async function GET(request: Request): Promise<
     | CronNutritionShoppingSkippedBody
     | CronNutritionShoppingRanBody
     | CronNutritionShoppingErrorBody
-    | { readonly error: string }
+    | typeof CRON_UNAUTHORIZED_JSON_BODY
   >
 > {
   const auth = validateCronBearerSecret(request);
@@ -63,25 +64,29 @@ export async function GET(request: Request): Promise<
     return NextResponse.json(body);
   }
   if (auth.kind === "unauthorized") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(CRON_UNAUTHORIZED_JSON_BODY, { status: 401 });
   }
 
   const now = new Date();
   const madridClock = madridCivilClockLabelHm(now);
-  const win = readNutritionShoppingSundayMadridWindowFromEnv(process.env);
-  if (
-    !isWithinMadridHalfOpenMinuteWindow({
-      when: now,
-      startMin: win.startMin,
-      endExclusiveMin: win.endExclusiveMin,
-    })
-  ) {
-    const body: CronNutritionShoppingSkippedBody = { ok: true, skipped: "outside_madrid_window", madridClock };
-    return NextResponse.json(body);
+  const bypassMadridSundayGuards = isTruthyEnvFlag(process.env.CRON_NUTRITION_SHOPPING_BYPASS_WINDOW);
+
+  if (!bypassMadridSundayGuards) {
+    const win = readNutritionShoppingSundayMadridWindowFromEnv(process.env);
+    if (
+      !isWithinMadridHalfOpenMinuteWindow({
+        when: now,
+        startMin: win.startMin,
+        endExclusiveMin: win.endExclusiveMin,
+      })
+    ) {
+      const body: CronNutritionShoppingSkippedBody = { ok: true, skipped: "outside_madrid_window", madridClock };
+      return NextResponse.json(body);
+    }
   }
 
   const fecha = todayMadridIso();
-  if (!isSundayEuropeMadrid(fecha)) {
+  if (!bypassMadridSundayGuards && !isSundayEuropeMadrid(fecha)) {
     const body: CronNutritionShoppingSkippedBody = { ok: true, skipped: "not_sunday_madrid", madridClock };
     return NextResponse.json(body);
   }
@@ -149,6 +154,8 @@ export async function GET(request: Request): Promise<
     const body: CronNutritionShoppingErrorBody = { ok: false, error: "persist_failed" };
     return NextResponse.json(body, { status: 500 });
   }
+
+  revalidateAfterSundayShoppingWrite();
 
   const body: CronNutritionShoppingRanBody = {
     ok: true,

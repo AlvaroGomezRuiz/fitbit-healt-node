@@ -68,11 +68,8 @@ export function HomeDashboardResumen({ dashboard }: HomeDashboardResumenProps): 
           </ul>
         ) : dashboard.telemetriaLatest.state === "disabled" ? (
           <EmptyNote>
-            Telemetría de pulsera desactivada. En Vercel define{" "}
-            <code className="rounded bg-muted px-1 text-foreground">FITBIT_ACTIVO=true</code> (o{" "}
-            <span className="font-mono text-foreground">1</span>) y luego{" "}
-            <code className="rounded bg-muted px-1 text-foreground">NEXT_PUBLIC_FITBIT_UI_ENABLED=true</code> para ver{" "}
-            <span className="font-mono">telemetria_diaria</span> aquí.
+            Telemetría de pulsera desactivada en este entorno. Abre la pestaña Salud o despliega el bloque
+            «Configuración (Fitbit / entorno)» abajo del panel para ver las variables necesarias.
           </EmptyNote>
         ) : dashboard.telemetriaLatest.state === "empty" ? (
           <EmptyNote>No hay filas recientes en `telemetria_diaria`.</EmptyNote>

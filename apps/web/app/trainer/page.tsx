@@ -1,12 +1,40 @@
 import * as React from "react";
 
 import { LyftaIngestForm } from "@/components/features/lyfta-ingest-form";
+import { EntrenosHistorialTrainerBlock, PostEntrenoTrainerBlock } from "@/components/features/trainer-page-blocks";
+import { listEntrenosHistoricoRecent } from "@/lib/data/entrenos-historico";
 import { fetchRutinaOficial } from "@/lib/data/rutina-oficial";
+import type { DiaSemanaDb } from "@/lib/data/rutina-oficial";
+import { listReportesHtmlByTipoRecent } from "@/lib/data/reportes-html";
+import { trainerHidratacionPillMetaForDia } from "@/lib/data/trainer-hidratacion";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+function HidratacionPill({ dia }: { readonly dia: DiaSemanaDb }): React.ReactElement {
+  const meta = trainerHidratacionPillMetaForDia(dia);
+  return (
+    <span
+      title={meta.title}
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+        meta.kind === "limonada" && "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100",
+        meta.kind === "coco" && "border-cyan-500/40 bg-cyan-500/10 text-cyan-950 dark:text-cyan-100",
+        meta.kind === "agua_mineral" &&
+          "border-slate-500/40 bg-slate-500/10 text-slate-900 dark:text-slate-100",
+      )}
+    >
+      {meta.badge}
+    </span>
+  );
+}
+
 export default async function TrainerPage(): Promise<React.ReactElement> {
-  const rutina = await fetchRutinaOficial();
+  const [rutina, postEntreno, historial] = await Promise.all([
+    fetchRutinaOficial(),
+    listReportesHtmlByTipoRecent({ tipo: "POST_ENTRENO", limit: 8 }),
+    listEntrenosHistoricoRecent({ limit: 18 }),
+  ]);
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="trainer-heading">
@@ -19,7 +47,11 @@ export default async function TrainerPage(): Promise<React.ReactElement> {
         </p>
       </header>
 
+      <EntrenosHistorialTrainerBlock historial={historial} />
+
       <RutinaPanel result={rutina} />
+
+      <PostEntrenoTrainerBlock reportes={postEntreno} />
 
       <LyftaIngestForm />
     </section>
@@ -92,9 +124,10 @@ function RutinaPanel({
       <h2 className="text-sm font-medium text-foreground">Rutina oficial</h2>
       <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
         {result.rows.map((row) => (
-          <li key={row.dia} className="flex flex-wrap items-baseline gap-2">
+          <li key={row.dia} className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-xs text-foreground">{row.dia}</span>
             <span className="text-foreground">{row.nombre_dia}</span>
+            <HidratacionPill dia={row.dia} />
             <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-foreground">{row.grupo_sesion}</span>
           </li>
         ))}

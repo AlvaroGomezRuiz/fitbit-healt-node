@@ -32,6 +32,50 @@ export const reportesHtmlSelectColumns =
 
 const reportesSelect = reportesHtmlSelectColumns;
 
+export type ReporteHtmlTipo = z.infer<typeof reporteHtmlTipoSchema>;
+
+/**
+ * Últimos informes HTML de un tipo concreto (p. ej. POST_ENTRENO), fecha descendente.
+ */
+export async function listReportesHtmlByTipoRecent(params: {
+  readonly tipo: ReporteHtmlTipo;
+  readonly limit: number;
+}): Promise<ListReportesHtmlRecentResult> {
+  const supabase = await createSupabaseServerClient();
+  if (supabase === null) {
+    return {
+      ok: false,
+      code: "missing_env",
+      message:
+        "Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY en apps/web/.env.local.",
+    };
+  }
+  const limit = Number.isFinite(params.limit) ? Math.min(Math.max(params.limit, 1), 20) : 5;
+  try {
+    const { data, error } = await supabase
+      .from("reportes_html")
+      .select(reportesSelect)
+      .eq("tipo", params.tipo)
+      .order("fecha", { ascending: false })
+      .limit(limit);
+    if (error !== null) {
+      return { ok: false, code: "query_error", message: publicSupabaseQueryFailureMessage(error.message) };
+    }
+    const rows: ReporteHtmlRow[] = [];
+    for (const item of data ?? []) {
+      const parsed = reporteHtmlRowSchema.safeParse(item);
+      if (!parsed.success) {
+        return { ok: false, code: "row_shape", message: "Formato inesperado en reportes_html." };
+      }
+      rows.push(parsed.data);
+    }
+    return { ok: true, rows };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido al leer reportes_html.";
+    return { ok: false, code: "query_error", message };
+  }
+}
+
 /**
  * Últimos informes HTML por fecha descendente (máx. `limit`).
  */

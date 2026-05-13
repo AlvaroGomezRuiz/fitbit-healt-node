@@ -1,7 +1,9 @@
 import Link from "next/link";
 import * as React from "react";
 
+import { textPreviewFromHtml } from "@/lib/data/html-preview";
 import type { HomeDashboardPayload } from "@/lib/data/home-dashboard";
+import { cn } from "@/lib/utils";
 
 import { EmptyNote } from "@/components/features/home/empty-note";
 import { friendlyQueryMessage } from "@/components/features/home/query-message";
@@ -15,7 +17,7 @@ export function HomeDashboardActividad({ dashboard }: HomeDashboardActividadProp
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 text-sm text-card-foreground">
       <section aria-labelledby="act-card-title" className="flex flex-col gap-2">
         <h2 id="act-card-title" className="text-sm font-semibold text-foreground">
-          Última sesión (`entrenos_historico`)
+          Última sesión
         </h2>
         {dashboard.ultimaSesion.state === "ok" ? (
           <div className="rounded-md border border-border bg-background/60 px-3 py-2 text-sm">
@@ -33,6 +35,56 @@ export function HomeDashboardActividad({ dashboard }: HomeDashboardActividadProp
           <EmptyNote>No hay filas de entreno importadas.</EmptyNote>
         ) : (
           <EmptyNote>{friendlyQueryMessage(dashboard.ultimaSesion.message)}</EmptyNote>
+        )}
+      </section>
+      <section aria-labelledby="rep-recent-title" className="flex flex-col gap-2 border-t border-border pt-3">
+        <h2 id="rep-recent-title" className="text-sm font-semibold text-foreground">
+          Informes recientes
+        </h2>
+        {dashboard.reportes.state === "ok" ? (
+          <ul className="flex flex-col gap-2">
+            {dashboard.reportes.data.slice(0, 3).map((r) => (
+              <li
+                key={r.id}
+                className={cn(
+                  "rounded-md border border-border bg-background/60 px-3 py-2 text-xs",
+                  "text-foreground",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{r.fecha}</span>
+                  <span className="text-muted-foreground">{r.tipo.replaceAll("_", " ")}</span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-muted-foreground">{textPreviewFromHtml(r.html_content, 140)}</p>
+              </li>
+            ))}
+          </ul>
+        ) : dashboard.reportes.state === "empty" ? (
+          <EmptyNote>Sin informes HTML recientes.</EmptyNote>
+        ) : (
+          <EmptyNote>{friendlyQueryMessage(dashboard.reportes.message)}</EmptyNote>
+        )}
+      </section>
+      <section aria-labelledby="mem-recent-title" className="flex flex-col gap-2 border-t border-border pt-3">
+        <h2 id="mem-recent-title" className="text-sm font-semibold text-foreground">
+          Memoria IA (extracto)
+        </h2>
+        {dashboard.memoriaLines.state === "ok" ? (
+          <ul className="flex flex-col gap-2">
+            {dashboard.memoriaLines.data.slice(0, 4).map((m) => (
+              <li
+                key={m.id}
+                className="rounded-md border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground"
+              >
+                <span className="font-medium text-foreground">{m.source_filename}</span>
+                <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-foreground/90">{m.contenido_linea}</p>
+              </li>
+            ))}
+          </ul>
+        ) : dashboard.memoriaLines.state === "empty" ? (
+          <EmptyNote>Sin líneas recientes en memoria IA.</EmptyNote>
+        ) : (
+          <EmptyNote>{friendlyQueryMessage(dashboard.memoriaLines.message)}</EmptyNote>
         )}
       </section>
     </div>

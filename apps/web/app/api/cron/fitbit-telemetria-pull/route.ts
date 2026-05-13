@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { validateCronBearerSecret } from "@/lib/cron/cron-secret";
+import { CRON_UNAUTHORIZED_JSON_BODY, validateCronBearerSecret } from "@/lib/cron/cron-secret";
 import {
   FITBIT_PULL_DEFAULT_END_EXCLUSIVE_MIN,
   FITBIT_PULL_DEFAULT_START_MIN,
@@ -25,7 +25,7 @@ export async function GET(request: Request): Promise<NextResponse<FitbitPullSkip
     return NextResponse.json(body);
   }
   if (auth.kind === "unauthorized") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(CRON_UNAUTHORIZED_JSON_BODY, { status: 401 });
   }
 
   const now = new Date();

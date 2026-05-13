@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { buildPreEntrenoSystemPrompt, buildPreEntrenoUserMessage } from "@/lib/ai/pre-entreno-prompt";
 import { runDeepSeekCascade } from "@/lib/ai/reexport";
-import { validateCronBearerSecret } from "@/lib/cron/cron-secret";
+import { CRON_UNAUTHORIZED_JSON_BODY, validateCronBearerSecret } from "@/lib/cron/cron-secret";
 import {
   isWithinMadridHalfOpenMinuteWindow,
   madridCivilClockLabelHm,
@@ -14,6 +14,7 @@ import { addDaysIsoUtc, todayMadridIso } from "@/lib/data/date-madrid";
 import { type MemoriaIaRow, memoriaIaRowSchema, memoriaIaSelectColumns } from "@/lib/data/memoria-ia";
 import { reporteHtmlRowSchema, reportesHtmlSelectColumns } from "@/lib/data/reportes-html";
 import { telemetriaDiariaRowSchema, telemetriaDiariaSelectColumns } from "@/lib/data/telemetria-diaria";
+import * as PostWriteCache from "@/lib/cache/revalidate-after-data-write";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +62,7 @@ export async function GET(request: Request): Promise<
     return NextResponse.json(body);
   }
   if (auth.kind === "unauthorized") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(CRON_UNAUTHORIZED_JSON_BODY, { status: 401 });
   }
 
   const now = new Date();
@@ -212,6 +213,8 @@ export async function GET(request: Request): Promise<
     const body: CronPreEntrenoErrorBody = { ok: false, error: "persist_failed" };
     return NextResponse.json(body, { status: 500 });
   }
+
+  PostWriteCache.revalidateAfterPreEntrenoReportWrite();
 
   const body: CronPreEntrenoRanBody = {
     ok: true,

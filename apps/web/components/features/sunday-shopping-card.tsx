@@ -1,24 +1,13 @@
-"use client";
-
 import * as React from "react";
 
-import { generateNutritionSundayShoppingAction } from "@/app/actions/nutrition-shopping";
-import type { NutritionSundayShoppingResult } from "@/app/actions/nutrition-shopping";
 import { parseSundayShoppingMarkdown } from "@/lib/nutrition/parse-sunday-shopping-markdown";
 import { cn } from "@/lib/utils";
 
-import { Button } from "@/components/ui/button";
-
 interface SundayShoppingCardProps {
-  readonly fecha: string;
-  readonly biometriaListo: boolean;
+  readonly markdown: string;
+  /** Si la consulta a `memoria_ia` falló: evita mensaje de “vacío” engañoso en la tarjeta IA. */
+  readonly listError?: string;
 }
-
-type UiState =
-  | { readonly kind: "idle" }
-  | { readonly kind: "loading" }
-  | { readonly kind: "success"; readonly markdown: string }
-  | { readonly kind: "error"; readonly message: string };
 
 function MarkdownBlock({
   text,
@@ -44,7 +33,7 @@ function SundayShoppingResult({
 }: {
   readonly markdown: string;
 }): React.ReactElement {
-  const parsed = React.useMemo(() => parseSundayShoppingMarkdown(markdown), [markdown]);
+  const parsed = parseSundayShoppingMarkdown(markdown);
   const hasStructure = parsed.shopping.length > 0 || parsed.dayPanels.length > 0;
   const fallbackText =
     parsed.remainder.length > 0 ? parsed.remainder : markdown.trim().length > 0 ? markdown : "";
@@ -108,51 +97,31 @@ function SundayShoppingResult({
   );
 }
 
-export function SundayShoppingCard({ fecha, biometriaListo }: SundayShoppingCardProps): React.ReactElement {
-  const [ui, setUi] = React.useState<UiState>({ kind: "idle" });
-
-  const onGenerar = (): void => {
-    setUi({ kind: "loading" });
-    void (async () => {
-      const result: NutritionSundayShoppingResult = await generateNutritionSundayShoppingAction({ fecha });
-      if (result.ok === true) {
-        setUi({ kind: "success", markdown: result.markdown });
-      } else {
-        setUi({ kind: "error", message: result.message });
-      }
-    })();
-  };
-
-  const disabled = !biometriaListo || ui.kind === "loading";
+export function SundayShoppingCard({ markdown, listError }: SundayShoppingCardProps): React.ReactElement {
+  const trimmed = markdown.trim();
+  const listErrorTrimmed = listError?.trim() ?? "";
+  const hasListError = listErrorTrimmed.length > 0;
 
   return (
     <div className="mt-4 rounded-md border border-border bg-muted/30 p-3 dark:bg-muted/15">
       <h3 className="text-sm font-semibold text-foreground">Lista de compra y menú semanal (IA)</h3>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Los domingos por la mañana el cron puede rellenar la semana y guardarla en memoria; aquí puedes forzar un
-        borrador en cualquier momento. Primero verás la <strong className="text-foreground">lista de compra</strong>;
-        debajo, un desplegable por cada día (lunes a domingo). Requiere que la IA siga el formato con encabezados{" "}
-        <code className="text-foreground">##</code>.
-      </p>
-      {ui.kind === "idle" ? (
-        <p className="mt-2 text-xs text-muted-foreground" role="status">
-          Sin borrador en esta sesión: usa «Generar con IA» o espera al cron del domingo (memoria_ia).
+      {hasListError ? (
+        <p className="mt-2 text-xs text-destructive" role="alert">
+          {listErrorTrimmed}
         </p>
-      ) : null}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" disabled={disabled} onClick={onGenerar}>
-          {ui.kind === "loading" ? "Generando…" : "Generar con IA"}
-        </Button>
-        {!biometriaListo ? (
-          <span className="text-xs text-muted-foreground">Necesitas biometría maestra cargada.</span>
-        ) : null}
-      </div>
-      {ui.kind === "error" ? (
-        <p className="mt-2 text-sm text-destructive" role="alert">
-          {ui.message}
+      ) : trimmed.length === 0 ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Se genera automáticamente los domingos (~10:00 Madrid) si `CRON_NUTRITION_SHOPPING_DEEPSEEK` está activo.
         </p>
-      ) : null}
-      {ui.kind === "success" ? <SundayShoppingResult markdown={ui.markdown} /> : null}
+      ) : (
+        <>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Vista estructurada del contenido guardado en `memoria_ia` (lista y menú cuando el formato usa
+            encabezados <code className="text-foreground">##</code>).
+          </p>
+          <SundayShoppingResult markdown={trimmed} />
+        </>
+      )}
     </div>
   );
 }

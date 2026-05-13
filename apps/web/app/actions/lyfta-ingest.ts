@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type { LyftaIngestState, LyftaStructuredPreview } from "@/lib/actions/lyfta-types";
+import { revalidateAfterEntrenosHistoricoWrite } from "@/lib/cache/revalidate-after-data-write";
 import { createSupabaseServerClient, createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 const ingestInputSchema = z.object({
@@ -200,19 +201,18 @@ export async function ingestLyftaAction(
       .single();
     if (error !== null) {
       return {
-        status: "stub",
+        status: "error",
         message: formatInsertFailure({ err: error, usedServiceRole }),
-        structured,
       };
     }
     const id = readInsertedRowId(data);
     if (id === "") {
       return {
-        status: "stub",
+        status: "error",
         message: "El guardado no devolvió id; revisa permisos RLS o la migración anon UPDATE para upsert Lyfta.",
-        structured,
       };
     }
+    revalidateAfterEntrenosHistoricoWrite();
     return {
       status: "success",
       message:
@@ -223,10 +223,6 @@ export async function ingestLyftaAction(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Error desconocido al insertar.";
-    return {
-      status: "stub",
-      message: msg,
-      structured,
-    };
+    return { status: "error", message: msg };
   }
 }

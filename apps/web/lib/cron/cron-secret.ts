@@ -54,3 +54,6 @@ export function validateCronBearerSecret(request: Request): CronBearerAuthResult
   }
   return { kind: "authorized" };
 }
+
+/** Cuerpo JSON estable para `401` en rutas cron (Vercel / clientes de inspección). */
+export const CRON_UNAUTHORIZED_JSON_BODY = { ok: false, error: "unauthorized" } as const;

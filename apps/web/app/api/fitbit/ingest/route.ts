@@ -1,3 +1,4 @@
+import { revalidateAfterTelemetriaDiariaWrite } from "@/lib/cache/revalidate-after-data-write";
 import { parseFitbitFeatureFlagsFromEnv, parseFitbitMasterFromEnv } from "@/lib/fitbit/config";
 import { telemetriaIngestBodySchema } from "@/lib/fitbit/ingest-schema";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -76,6 +77,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       { status: 502 },
     );
   }
+
+  revalidateAfterTelemetriaDiariaWrite();
 
   return jsonUnknown({ accepted: true as const, fecha: body.fecha }, { status: 200 });
 }

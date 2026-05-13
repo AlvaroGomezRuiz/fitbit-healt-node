@@ -5,13 +5,14 @@ import {
   buildNutritionDailyRoutineUserMessage,
 } from "@/lib/ai/nutrition-daily-routine-prompt";
 import { runDeepSeekCascade } from "@/lib/ai/reexport";
-import { validateCronBearerSecret } from "@/lib/cron/cron-secret";
+import { CRON_UNAUTHORIZED_JSON_BODY, validateCronBearerSecret } from "@/lib/cron/cron-secret";
 import { biometriaMaestroRowSchema, biometriaSelect } from "@/lib/data/biometria-maestro";
 import { buildEntrenosHistoricoContextForPrompt } from "@/lib/data/build-entrenos-historico-context";
 import { addDaysIsoUtc, diaSemanaDbFromMadridIso, todayMadridIso } from "@/lib/data/date-madrid";
 import type { DiaSemanaDb } from "@/lib/data/rutina-oficial";
 import { fetchRutinaOficialDetailByDia } from "@/lib/data/rutina-oficial";
 import { telemetriaDiariaRowSchema, telemetriaDiariaSelectColumns } from "@/lib/data/telemetria-diaria";
+import { revalidateAfterDiarioPlanIaWrite } from "@/lib/cache/revalidate-after-data-write";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +55,7 @@ export async function GET(request: Request): Promise<
     return NextResponse.json(body);
   }
   if (auth.kind === "unauthorized") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(CRON_UNAUTHORIZED_JSON_BODY, { status: 401 });
   }
 
   if (!isTruthyEnvFlag(process.env.CRON_DAILY_NUTRITION_DEEPSEEK)) {
@@ -170,6 +171,8 @@ export async function GET(request: Request): Promise<
     const body: CronDailyNutritionErrorBody = { ok: false, error: "persist_failed" };
     return NextResponse.json(body, { status: 500 });
   }
+
+  revalidateAfterDiarioPlanIaWrite();
 
   const body: CronDailyNutritionRanBody = {
     ok: true,

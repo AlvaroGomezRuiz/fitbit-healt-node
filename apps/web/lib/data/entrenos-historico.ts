@@ -23,6 +23,14 @@ export type FetchUltimaSesionEntrenoResult =
       readonly message: string;
     };
 
+export type CountEntrenosDesdeFechaResult =
+  | { readonly ok: true; readonly count: number }
+  | {
+      readonly ok: false;
+      readonly code: "missing_env" | "bad_fecha" | "query_error";
+      readonly message: string;
+    };
+
 const lyftaRawPayloadPeekSchema = z
   .object({
     text_preview: z.string().optional(),
@@ -39,13 +47,15 @@ const entrenoHistoricoLyftaRowSchema = z.object({
 
 export type EntrenoHistoricoLyftaRow = z.infer<typeof entrenoHistoricoLyftaRowSchema>;
 
-export type FetchEntrenoHistoricoByIdResult =
-  | { readonly ok: true; readonly row: EntrenoHistoricoLyftaRow }
-  | {
-      readonly ok: false;
-      readonly code: "missing_env" | "bad_id" | "not_found" | "query_error" | "row_shape";
-      readonly message: string;
-    };
+const entrenoHistoricoListRowSchema = z.object({
+  id: z.string().uuid(),
+  origen: entrenoOrigenSchema,
+  session_date: z.string(),
+  session_title: z.string(),
+  raw_payload: z.unknown().nullable(),
+});
+
+export type EntrenoHistoricoListRow = z.infer<typeof entrenoHistoricoListRowSchema>;
 
 export function extractLyftaTextPreviewFromRawPayload(raw: unknown): string {
   const parsed = lyftaRawPayloadPeekSchema.safeParse(raw);
@@ -55,6 +65,72 @@ export function extractLyftaTextPreviewFromRawPayload(raw: unknown): string {
   const tp = parsed.data.text_preview;
   return typeof tp === "string" ? tp : "";
 }
+
+export type ListEntrenosHistoricoRecentResult =
+  | { readonly ok: true; readonly rows: readonly EntrenoHistoricoListRow[] }
+  | {
+      readonly ok: false;
+      readonly code: "missing_env" | "query_error" | "row_shape";
+      readonly message: string;
+    };
+
+/**
+ * Sesiones recientes en `entrenos_historico` (orden por `session_date` desc).
+ * Con políticas anon actuales puede incluir Lyfta y filas migradas desde Drive.
+ */
+export async function listEntrenosHistoricoRecent(params: {
+  readonly limit: number;
+}): Promise<ListEntrenosHistoricoRecentResult> {
+  const supabase = await createSupabaseServerClient();
+  if (supabase === null) {
+    return {
+      ok: false,
+      code: "missing_env",
+      message:
+        "Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY en apps/web/.env.local.",
+    };
+  }
+  const limitRaw = Number.isFinite(params.limit) ? params.limit : 18;
+  const limit = Math.min(Math.max(Math.floor(limitRaw), 1), 20);
+  try {
+    const { data, error } = await supabase
+      .from("entrenos_historico")
+      .select("id,origen,session_date,session_title,raw_payload")
+      .order("session_date", { ascending: false })
+      .limit(limit);
+    if (error !== null) {
+      return { ok: false, code: "query_error", message: publicSupabaseQueryFailureMessage(error.message) };
+    }
+    const rows: EntrenoHistoricoListRow[] = [];
+    for (const item of data ?? []) {
+      const parsed = entrenoHistoricoListRowSchema.safeParse(item);
+      if (!parsed.success) {
+        return { ok: false, code: "row_shape", message: "Formato inesperado en entrenos_historico." };
+      }
+      rows.push(parsed.data);
+    }
+    return { ok: true, rows };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido al listar entrenos.";
+    return { ok: false, code: "query_error", message };
+  }
+}
+
+export function previewLineForEntrenoHistoricoRow(row: EntrenoHistoricoListRow): string {
+  if (row.origen === "lyfta_raw") {
+    const peek = extractLyftaTextPreviewFromRawPayload(row.raw_payload);
+    return peek.length > 0 ? peek : row.session_title;
+  }
+  return row.session_title;
+}
+
+export type FetchEntrenoHistoricoByIdResult =
+  | { readonly ok: true; readonly row: EntrenoHistoricoLyftaRow }
+  | {
+      readonly ok: false;
+      readonly code: "missing_env" | "bad_id" | "not_found" | "query_error" | "row_shape";
+      readonly message: string;
+    };
 
 /**
  * Carga una fila de `entrenos_historico` por id (RSC / helpers).
@@ -101,6 +177,38 @@ export async function fetchEntrenoHistoricoById(id: string): Promise<FetchEntren
     return { ok: true, row: parsed.data };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido al leer entrenos.";
+    return { ok: false, code: "query_error", message };
+  }
+}
+
+/**
+ * Cuenta filas en `entrenos_historico` con `session_date >= desdeIso` (inclusive), `YYYY-MM-DD`.
+ */
+export async function countEntrenosSessionDateGte(desdeIso: string): Promise<CountEntrenosDesdeFechaResult> {
+  const fechaOk = /^\d{4}-\d{2}-\d{2}$/u.test(desdeIso);
+  if (!fechaOk) {
+    return { ok: false, code: "bad_fecha", message: "Fecha inválida (se espera YYYY-MM-DD)." };
+  }
+  const supabase = await createSupabaseServerClient();
+  if (supabase === null) {
+    return {
+      ok: false,
+      code: "missing_env",
+      message:
+        "Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY en apps/web/.env.local.",
+    };
+  }
+  try {
+    const { count, error } = await supabase
+      .from("entrenos_historico")
+      .select("id", { count: "exact", head: true })
+      .gte("session_date", desdeIso);
+    if (error !== null) {
+      return { ok: false, code: "query_error", message: publicSupabaseQueryFailureMessage(error.message) };
+    }
+    return { ok: true, count: typeof count === "number" ? count : 0 };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido al contar entrenos.";
     return { ok: false, code: "query_error", message };
   }
 }

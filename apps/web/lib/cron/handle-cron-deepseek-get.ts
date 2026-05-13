@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { runDeepSeekCascade } from "@/lib/ai/reexport";
-import { validateCronBearerSecret } from "@/lib/cron/cron-secret";
+import { CRON_UNAUTHORIZED_JSON_BODY, validateCronBearerSecret } from "@/lib/cron/cron-secret";
 import { parseFitbitMasterFromEnv } from "@/lib/fitbit/config";
 
 export type CronDeepSeekFlagEnv = "CRON_RESUMEN_NOCHE_DEEPSEEK";
@@ -39,14 +39,14 @@ export async function handleCronDeepSeekGet(params: {
   readonly request: Request;
   readonly aiFlagEnv: CronDeepSeekFlagEnv;
   readonly prompt: string;
-}): Promise<NextResponse<CronSkippedBody | CronRanBody | CronDeepSeekErrorBody | { readonly error: string }>> {
+}): Promise<NextResponse<CronSkippedBody | CronRanBody | CronDeepSeekErrorBody | typeof CRON_UNAUTHORIZED_JSON_BODY>> {
   const auth = validateCronBearerSecret(params.request);
   if (auth.kind === "missing_cron_secret_env") {
     const body: CronSkippedBody = { ok: true, skipped: "missing_cron_secret_env" };
     return NextResponse.json(body);
   }
   if (auth.kind === "unauthorized") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(CRON_UNAUTHORIZED_JSON_BODY, { status: 401 });
   }
 
   if (!parseFitbitMasterFromEnv(process.env)) {
