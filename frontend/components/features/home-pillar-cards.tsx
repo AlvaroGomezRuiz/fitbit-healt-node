@@ -5,7 +5,6 @@ import { friendlyQueryMessage } from "@/components/features/home/query-message";
 import { markdownPlainPreviewLines } from "@/lib/data/markdown-plain-preview";
 import type { HomeDashboardPayload } from "@/lib/data/home-dashboard";
 import {
-  emptyPillarBiometria,
   emptyTelemetryPillarSummary,
   pillarNoNutritionPlanYet,
 } from "@/lib/ui/single-user-placeholders";
@@ -50,7 +49,7 @@ export function HomePillarCards({ dashboard }: HomePillarCardsProps): React.Reac
         ? pillarNoNutritionPlanYet
         : friendlyQueryMessage(diarioPlanHoy.message);
 
-  const nutricionMacroLine =
+  const nutricionMacroLine: string | null =
     biometria.state === "ok"
       ? `${formatObjetivoNutricion(biometria.data.objetivo_tipo)} · ${formatNumberEs(
           biometria.data.kcal_target,
@@ -58,7 +57,7 @@ export function HomePillarCards({ dashboard }: HomePillarCardsProps): React.Reac
           biometria.data.carbos_g,
         )} / G ${formatNumberEs(biometria.data.grasa_g)} g`
       : biometria.state === "empty"
-        ? emptyPillarBiometria
+        ? null
         : friendlyQueryMessage(biometria.message);
 
   const coachSesionLine =
@@ -102,7 +101,9 @@ export function HomePillarCards({ dashboard }: HomePillarCardsProps): React.Reac
         <h2 className="text-base font-semibold tracking-tight text-foreground">Nutrición</h2>
         <p className="text-xs capitalize text-muted-foreground">{meta.fechaCivilMadridLegible}</p>
         <p className="min-h-10 text-sm leading-snug text-foreground">{nutricionPlanLine}</p>
-        <p className="text-xs leading-snug text-muted-foreground">{nutricionMacroLine}</p>
+        {nutricionMacroLine !== null ? (
+          <p className="text-xs leading-snug text-muted-foreground">{nutricionMacroLine}</p>
+        ) : null}
         <Link
           className="mt-auto pt-1 text-sm font-medium text-ring underline-offset-4 hover:underline"
           href="/nutrition"

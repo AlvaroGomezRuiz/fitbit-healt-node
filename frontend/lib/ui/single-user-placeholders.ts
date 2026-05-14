@@ -49,10 +49,11 @@ export const emptySavedNotesLines =
   "Todavía no hay líneas de memoria guardadas. Cuando la IA deje notas, las verás aquí." as const;
 
 export const emptyDashboardBiometria =
-  "Sin perfil personal visible todavía. Completa tu perfil para ver peso, objetivo y macros en el resumen." as const;
+  "Sin fila de biometría en la base de datos todavía (objetivo, peso y macros aparecerán aquí cuando exista el registro)." as const;
 
+/** Reservado por si otra vista necesita un pie de pilar; la tarjeta Nutrición del inicio ya no muestra esta línea cuando no hay datos. */
 export const emptyPillarBiometria =
-  "Perfil personal pendiente: define peso y macros para ver esta tarjeta con contexto." as const;
+  "Sin datos de biometría en base de datos para esta vista." as const;
 
 export const emptyTelemetryPillarSummary =
   "Sin lecturas de pulsera en el último día. Cuando sincronices, verás pasos y sueño aquí." as const;

@@ -38,7 +38,7 @@ export function HomeDashboardView({ dashboard }: HomeDashboardViewProps): React.
       </header>
       <InicioProfileStrip biometria={dashboard.biometria} />
       <InicioWeeklyObjectivesStrip block={dashboard.weeklyObjective} />
-      {domingoMadrid ? (
+      {domingoMadrid && dashboard.meta.usuarioAutenticado ? (
         <section
           className="rounded-lg border border-border bg-card px-4 py-3 text-card-foreground"
           aria-labelledby="domingo-peso-heading"
