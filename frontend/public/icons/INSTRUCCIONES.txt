@@ -1,0 +1,6 @@
+Iconos PWA (placeholder)
+------------------------
+- PNG listos: icon-192.png, icon-512.png, apple-touch-icon.png (generados, color #0f172a).
+- Regenerar sin dependencias: desde frontend ejecutar:
+    node scripts/generate-pwa-icons.mjs
+- icon-placeholder.svg es referencia vectorial; iOS usa los PNG para apple-touch-icon.

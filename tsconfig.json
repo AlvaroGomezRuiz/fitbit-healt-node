@@ -1,17 +1,19 @@
 {
+  "extends": "./frontend/tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "strict": true,
-    "noImplicitAny": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "outDir": "dist-scripts",
-    "rootDir": "."
+    "plugins": [],
+    "baseUrl": "./frontend",
+    "paths": {
+      "@/*": ["./*"],
+      "@repo/ai": ["./lib/deepseek-package/index.ts"],
+      "zod": ["./node_modules/zod"]
+    }
   },
-  "include": ["scripts/**/*.ts", "scripts/**/*.mts", "lib/**/*.ts"]
+  "include": [
+    "frontend/**/*.ts",
+    "frontend/**/*.tsx",
+    "frontend/next-env.d.ts",
+    "frontend/.next/types/**/*.ts"
+  ],
+  "exclude": ["node_modules", "frontend/node_modules", "frontend/.next"]
 }

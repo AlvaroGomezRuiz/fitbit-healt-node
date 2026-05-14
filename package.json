@@ -3,26 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "migrate:drive": "tsx scripts/migrate_from_drive.ts",
-    "smoke:deepseek": "tsx scripts/smoke_deepseek.ts",
-    "cron:smoke": "tsx scripts/run-all-crons-smoke.mts",
-    "typecheck:scripts": "tsc --noEmit -p tsconfig.json",
-    "typecheck:web": "tsc --noEmit -p apps/web/tsconfig.json",
-    "web:dev": "npm --prefix apps/web run dev",
-    "web:build": "npm --prefix apps/web run build",
-    "web:install": "npm --prefix apps/web install"
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix frontend run start",
+    "lint": "npm --prefix frontend run lint",
+    "typecheck": "npm --prefix frontend exec -- tsc --noEmit -p frontend/tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",
-    "tsx": "^4.19.4",
     "typescript": "^5.8.3"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.49.8",
-    "csv-parse": "^5.6.0",
-    "dotenv": "^16.5.0",
-    "google-auth-library": "^9.15.1",
-    "googleapis": "^148.0.0",
-    "zod": "^3.24.4"
   }
 }

@@ -34,7 +34,8 @@ credenciales_oauth.json
 token.json
 *.token.json
 service-account-*.json
-secrets/
+secrets/*
+!secrets/.gitkeep
 
 # ── Datos personales del atleta ───────────────────────────────────────
 # CSV de entrenos y exports privados. El sistema los sube a Drive vía
@@ -43,8 +44,15 @@ RUTINA/
 payments/
 debug_drive/
 
+# ── Supabase CLI artefactos locales ───────────────────────────────────
+supabase/.temp/
+supabase/.branches/
+
 # ── Cursor IDE ───────────────────────────────────────
 .cursorignore
 .cursorrules
 .cursor/
 cursor/
+SALUD/
+docs/
+RUTINA_OFICIAL.md
