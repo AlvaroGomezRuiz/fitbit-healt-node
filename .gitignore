@@ -40,7 +40,7 @@ secrets/*
 # ── Datos personales del atleta ───────────────────────────────────────
 # CSV de entrenos y exports privados. El sistema los sube a Drive vía
 # scripts/actualizar_contexto_drive.py y los lee desde allí.
-RUTINA/
+/RUTINA/
 payments/
 debug_drive/
 
@@ -53,6 +53,7 @@ supabase/.branches/
 .cursorrules
 .cursor/
 cursor/
-SALUD/
-docs/
-RUTINA_OFICIAL.md
+# Solo la carpeta de datos en la raíz (en Windows `SALUD/` ignoraba también `.../salud/` del frontend).
+/SALUD/
+/docs/
+/RUTINA_OFICIAL.md
