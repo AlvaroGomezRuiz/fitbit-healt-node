@@ -53,6 +53,8 @@ supabase/.branches/
 .cursorrules
 .cursor/
 cursor/
+# Remanente antiguo (monorepo apps/web); no debe volver a versionarse.
+/apps/
 # Solo la carpeta de datos en la raíz (en Windows `SALUD/` ignoraba también `.../salud/` del frontend).
 /SALUD/
 /docs/
